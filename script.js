@@ -228,7 +228,7 @@ const GRUPOS_OPERADORAS = {
 };
 
 // ══════════════════════════════════════════════
-//  STATE
+//  STATE — cache em memória (populado do IndexedDB no boot)
 // ══════════════════════════════════════════════
 let state = { collected: {}, prefixos24: {}, analises: {}, coletando: false };
 let chartPrefixos = null, chartDist = null, chartPaths = null,
@@ -240,90 +240,114 @@ Chart.defaults.font.family = "'IBM Plex Mono', monospace";
 Chart.defaults.font.size = 11;
 
 // ══════════════════════════════════════════════
-//  BANCO DE DADOS — localStorage
+//  BANCO DE DADOS — IndexedDB via BGP_DB
+//  (db.js deve ser carregado antes de script.js)
 // ══════════════════════════════════════════════
-var DB = {
-  KEYS: {
-    collected:  'bgp_collected',
-    prefixos24: 'bgp_prefixos24',
-    analises:   'bgp_analises',
-    mitigacao:  'bgp_mitigacao',
-    lastSync:   'bgp_last_sync'
-  },
 
-  salvar: function() {
-    try {
-      localStorage.setItem(DB.KEYS.collected,  JSON.stringify(state.collected));
-      localStorage.setItem(DB.KEYS.prefixos24, JSON.stringify(state.prefixos24));
-      localStorage.setItem(DB.KEYS.analises,   JSON.stringify(state.analises));
-      localStorage.setItem(DB.KEYS.lastSync,   new Date().toISOString());
-      DB.atualizarUI();
-    } catch(e) { console.warn('DB.salvar error:', e); }
-  },
+// Atualiza o badge de status do banco na sidebar
+function dbAtualizarUI() {
+  var n       = Object.keys(state.collected).length;
+  var countEl = document.getElementById('db-count');
+  var dotEl   = document.getElementById('db-dot');
+  if (countEl) countEl.textContent = n + ' ASN' + (n !== 1 ? 's' : '');
+  if (dotEl) {
+    dotEl.style.background = n > 0 ? 'var(--ok)' : 'var(--text3)';
+    dotEl.style.boxShadow  = n > 0 ? '0 0 6px var(--ok)' : 'none';
+  }
+  // Linha de sync com timestamp do banco
+  BGP_DB.estatisticas().then(function (stats) {
+    var si = document.querySelector('.sidebar-info');
+    if (!si) return;
+    var existing = document.getElementById('db-sync-row');
+    if (!existing) {
+      var row = document.createElement('div');
+      row.className = 'si-row'; row.id = 'db-sync-row';
+      row.innerHTML = '<span class="si-label">IndexedDB</span>' +
+        '<span class="si-val" id="db-sync-ts"></span>';
+      si.appendChild(row);
+    }
+    var tsEl = document.getElementById('db-sync-ts');
+    if (tsEl) tsEl.textContent = stats.operadoras + 'op · ' + stats.prefixos24 + '/24';
+  });
+}
 
-  carregar: function() {
-    try {
-      var c = localStorage.getItem(DB.KEYS.collected);
-      var p = localStorage.getItem(DB.KEYS.prefixos24);
-      var a = localStorage.getItem(DB.KEYS.analises);
-      if (c) state.collected  = JSON.parse(c);
-      if (p) state.prefixos24 = JSON.parse(p);
-      if (a) state.analises   = JSON.parse(a);
-      DB.atualizarUI();
-      return Object.keys(state.collected).length;
-    } catch(e) { console.warn('DB.carregar error:', e); return 0; }
-  },
+// Salva uma entry de operadora completa no IndexedDB
+async function dbSalvarEntry(asn, entry, pf24, analise) {
+  try {
+    await BGP_DB.salvarOperadora(entry);
+    await BGP_DB.salvarPrefixos(asn, entry.prefixos || []);
+    if (analise) await BGP_DB.salvarAnalise(asn, analise);
+    await BGP_DB.registrarEvento('coleta', asn, {
+      nome_op:   entry.nome_op,
+      prefixos:  (entry.prefixos || []).length,
+      pf24:      (pf24 || []).length
+    });
+    dbAtualizarUI();
+  } catch (e) { console.warn('[BGP_DB] Erro ao salvar entry:', e); }
+}
 
-  limpar: function() {
-    Object.values(DB.KEYS).forEach(function(k) { localStorage.removeItem(k); });
+// Carrega todo o estado do IndexedDB para memória
+async function dbCarregar() {
+  try {
+    var ops      = await BGP_DB.listarOperadoras();
+    var analises = await BGP_DB.listarAnalises();
+
     state.collected  = {};
     state.prefixos24 = {};
     state.analises   = {};
-    mitResultados  = [];
-    mitMitigadores = {};
-    DB.atualizarUI();
-  },
 
-  atualizarUI: function() {
-    var n = Object.keys(state.collected).length;
-    var countEl = document.getElementById('db-count');
-    var dotEl   = document.getElementById('db-dot');
-    if (countEl) countEl.textContent = n + ' ASN' + (n !== 1 ? 's' : '');
-    if (dotEl) {
-      dotEl.style.background = n > 0 ? 'var(--ok)' : 'var(--text3)';
-      dotEl.style.boxShadow  = n > 0 ? '0 0 6px var(--ok)' : 'none';
+    // Recarrega operadoras
+    for (var i = 0; i < ops.length; i++) {
+      var op = ops[i];
+      state.collected[op.asn] = op;
     }
 
-    var ts = localStorage.getItem(DB.KEYS.lastSync);
-    if (ts && n > 0) {
-      var d = new Date(ts);
-      var str = d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
-      var si = document.querySelector('.sidebar-info');
-      if (si) {
-        var existing = document.getElementById('db-sync-row');
-        if (!existing) {
-          var row = document.createElement('div');
-          row.className = 'si-row'; row.id = 'db-sync-row';
-          row.innerHTML = '<span class="si-label">Sync</span><span class="si-val" id="db-sync-ts"></span>';
-          si.appendChild(row);
-        }
-        var tsEl = document.getElementById('db-sync-ts');
-        if (tsEl) tsEl.textContent = str;
+    // Recarrega prefixos /24 agrupados por ASN
+    if (ops.length > 0) {
+      for (var j = 0; j < ops.length; j++) {
+        var asn = ops[j].asn;
+        var pfs = await BGP_DB.buscarPrefixosPorASN(asn);
+        state.prefixos24[asn] = pfs;
       }
     }
-  }
-};
 
+    // Recarrega análises
+    for (var k = 0; k < analises.length; k++) {
+      var an = analises[k];
+      state.analises[an.asn] = an;
+    }
+
+    dbAtualizarUI();
+    return ops.length;
+  } catch (e) {
+    console.warn('[BGP_DB] Erro ao carregar estado:', e);
+    return 0;
+  }
+}
+
+// Limpa tudo: banco + estado em memória
 function limparDB() {
-  if (!confirm('Limpar todos os dados salvos no cache local?')) return;
-  DB.limpar();
-  atualizarDashboard();
-  popularSelectFiltro();
-  var tbody = document.getElementById('tabela-prefixos');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty"><div class="empty-icon">◌</div><div class="empty-text">Cache limpo. Realize uma nova coleta.</div></div></td></tr>';
-  var trel = document.getElementById('tabela-relatorio');
-  if (trel) trel.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">▤</div><div class="empty-text">Cache limpo.</div></div></td></tr>';
-  log('log-terminal', '✓ Cache local limpo.', 'ok');
+  if (!confirm('Limpar todos os dados no banco IndexedDB?')) return;
+  BGP_DB.limparColeta().then(function () {
+    state.collected  = {};
+    state.prefixos24 = {};
+    state.analises   = {};
+    mitResultados    = [];
+    mitMitigadores   = {};
+    dbAtualizarUI();
+    atualizarDashboard();
+    popularSelectFiltro();
+    var tbody = document.getElementById('tabela-prefixos');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty"><div class="empty-icon">◌</div>' +
+      '<div class="empty-text">Banco limpo. Realize uma nova coleta.</div></div></td></tr>';
+    var trel = document.getElementById('tabela-relatorio');
+    if (trel) trel.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">▤</div>' +
+      '<div class="empty-text">Banco limpo.</div></div></td></tr>';
+    log('log-terminal', '✓ IndexedDB limpo — todos os dados removidos.', 'ok');
+  }).catch(function (e) {
+    console.error('[BGP_DB] Erro ao limpar:', e);
+    log('log-terminal', '✗ Erro ao limpar banco: ' + e, 'warn');
+  });
 }
 
 // ══════════════════════════════════════════════
@@ -576,6 +600,10 @@ async function iniciarMitigacaoScan() {
       // Só registra prefixos onde outro ASN aparece como origem (MOAS real)
       if (res.mitigadores.length > 0) {
         mitResultados.push(res);
+        // Persistir no IndexedDB
+        BGP_DB.salvarMitigacao(res).catch(function(e) {
+          console.warn('[BGP_DB] Erro ao salvar mitigacao:', e);
+        });
         // Indexar por ASN mitigador
         res.mitigadores.forEach(function(asnMit) {
           if (!mitMitigadores[asnMit]) {
@@ -1004,7 +1032,6 @@ async function coletarASN(asn, nome, logId) {
   };
   state.collected[asn] = entry;
   state.prefixos24[asn] = pf24;
-  DB.salvar();
 
   if (pf24.length > 0) {
     log(logId, '-> GET looking-glass ' + pf24[0], 'data');
@@ -1027,6 +1054,9 @@ async function coletarASN(asn, nome, logId) {
     log(logId, '✓ AS-PATH: media ' + a.media_saltos + ' saltos | ' + a.paths_unicos + ' unicos', 'ok');
     if (a.desvio_suspeito) log(logId, '⚠ Desvio suspeito detectado!', 'warn');
   }
+
+  // Persistir no IndexedDB
+  await dbSalvarEntry(asn, entry, pf24, state.analises[asn] || null);
 
   // UI coletor
   document.getElementById('coletor-resultado').style.display = '';
@@ -1403,22 +1433,33 @@ window.addEventListener('DOMContentLoaded', function() {
     options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } } }
   });
 
-  // Carregar dados do cache local
-  var nCarregados = DB.carregar();
-  if (nCarregados > 0) {
-    atualizarDashboard();
-    popularSelectFiltro();
-    filtrarPrefixos();
-  }
-
-  setTimeout(function() {
+  // ── Carregar estado do IndexedDB ─────────────────────────────────────────
+  dbCarregar().then(function(nCarregados) {
     var total = Object.keys(OPERADORAS).length;
-    log('log-terminal', 'Sistema iniciado — ' + total + ' operadoras disponiveis.', 'hi');
+    log('log-terminal', 'Sistema iniciado — IndexedDB conectado.', 'hi');
+    log('log-terminal', total + ' operadoras disponiveis para coleta.', 'info');
+
     if (nCarregados > 0) {
-      log('log-terminal', '✓ ' + nCarregados + ' ASN(s) carregados do cache local.', 'ok');
+      log('log-terminal', '✓ ' + nCarregados + ' ASN(s) carregados do banco IndexedDB.', 'ok');
+      atualizarDashboard();
+      popularSelectFiltro();
+      filtrarPrefixos();
+
+      BGP_DB.estatisticas().then(function(stats) {
+        log('log-terminal',
+          '→ Banco: ' + stats.operadoras + ' ops | ' +
+          stats.prefixos + ' prefixos | ' +
+          stats.prefixos24 + ' /24 | ' +
+          stats.mitigacao + ' eventos MOAS',
+          'data');
+      });
+    } else {
+      log('log-terminal', '→ Banco vazio. Use o Coletor BGP para iniciar.', 'info');
     }
+
     log('log-terminal', '→ MA: Sao Luis (15) | Imperatriz/Sul (12) | Interior (29)', 'info');
     log('log-terminal', '→ Nordeste (20) | Nacionais (7) | CDN/Educacao (12)', 'info');
-    log('log-terminal', 'Use o seletor de Grupo para coletar por regiao.', 'info');
-  }, 600);
+  }).catch(function(e) {
+    log('log-terminal', '✗ Erro ao conectar ao IndexedDB: ' + e, 'warn');
+  });
 });
