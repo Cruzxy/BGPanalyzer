@@ -1,0 +1,23 @@
+# Cache e artefatos do sistema
+cache/
+artifacts/
+.gemini/
+
+# Logs
+*.log
+logs/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node (caso use servidor local)
+node_modules/
