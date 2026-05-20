@@ -235,6 +235,8 @@ let chartPrefixos = null, chartDist = null, chartPaths = null,
     chartComp1 = null, chartRadar = null, chartScatter = null;
 let analiseAbortController = null;
 let analiseRodando = false;
+let coletaAbortController = null;
+let coletaCancelada = false;
 
 if (window.Chart) {
   Chart.defaults.color = '#526071';
@@ -493,16 +495,28 @@ function mitSetUI(ativo) {
   mitRodando = ativo;
   var s = document.getElementById('btn-mit-scan');
   var c = document.getElementById('btn-mit-cancel');
+  var top = document.getElementById('btn-mit-cancel-top');
   var p = document.getElementById('mit-progress-wrap');
   if (s) s.disabled        = ativo;
-  if (c) c.style.display   = ativo ? '' : 'none';
+  if (c) {
+    c.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 2l8 8M10 2l-8 8"/></svg>Cancelar';
+    c.style.display = ativo ? '' : 'none';
+    c.disabled = false;
+  }
+  if (top) {
+    top.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 2l8 8M10 2l-8 8"/></svg>Parar análise';
+    top.style.display = ativo ? '' : 'none';
+    top.disabled = false;
+  }
   if (p) p.style.display   = (ativo || mitResultados.length) ? '' : 'none';
 }
 
 function cancelarMitigacaoScan() {
   mitCancelado = true;
   var el = document.getElementById('btn-mit-cancel');
+  var top = document.getElementById('btn-mit-cancel-top');
   if (el) { el.disabled = true; el.textContent = 'Cancelando...'; }
+  if (top) { top.disabled = true; top.textContent = 'Cancelando...'; }
   log('log-mitigacao', 'Cancelamento solicitado...', 'warn');
 }
 
@@ -1049,43 +1063,97 @@ async function fetchRIPE(endpoint, signal) {
   }
 }
 
+function criarAbortError() {
+  var err = new Error('Operação cancelada');
+  err.name = 'AbortError';
+  return err;
+}
+
+function assertNaoCancelado(signal) {
+  if ((signal && signal.aborted) || coletaCancelada) throw criarAbortError();
+}
+
 // ══════════════════════════════════════════════
 //  COLETA
 // ══════════════════════════════════════════════
+function setColetaUI(ativo) {
+  state.coletando = ativo;
+  var single = document.getElementById('btn-coletar-single');
+  var all = document.getElementById('btn-coletar');
+  var cancel = document.getElementById('btn-cancelar-coleta');
+  var selOp = document.getElementById('sel-operadora');
+  var selGrupo = document.getElementById('sel-grupo');
+  var inpAsn = document.getElementById('inp-asn');
+  if (single) single.disabled = ativo;
+  if (all) all.disabled = ativo;
+  if (selOp) selOp.disabled = ativo;
+  if (selGrupo) selGrupo.disabled = ativo;
+  if (inpAsn) inpAsn.disabled = ativo;
+  if (cancel) {
+    cancel.style.display = ativo ? '' : 'none';
+    cancel.disabled = false;
+  }
+}
+
+function cancelarColeta() {
+  if (!state.coletando) return;
+  coletaCancelada = true;
+  if (coletaAbortController) coletaAbortController.abort();
+  var cancel = document.getElementById('btn-cancelar-coleta');
+  if (cancel) cancel.disabled = true;
+  log('log-terminal', 'Parando coleta. A requisição atual será interrompida quando possível...', 'warn');
+}
+
 async function iniciarColeta() {
+  if (state.coletando) return;
   var sel = document.getElementById('sel-operadora').value;
   var manual = document.getElementById('inp-asn').value.trim().replace(/^AS/i,'');
   var asn = manual || sel;
   if (!asn) { alert('Selecione uma operadora ou informe um ASN.'); return; }
   var nome = Object.keys(OPERADORAS).find(function(k) { return OPERADORAS[k] === asn; }) || ('AS' + asn);
-  var btn = document.getElementById('btn-coletar-single');
-  if (btn) btn.disabled = true;
-  await coletarASN(asn, nome, 'log-terminal');
-  atualizarDashboard();
-  popularSelectFiltro();
-  if (btn) btn.disabled = false;
+  coletaAbortController = new AbortController();
+  coletaCancelada = false;
+  setColetaUI(true);
+  try {
+    await coletarASN(asn, nome, 'log-terminal', coletaAbortController.signal);
+    atualizarDashboard();
+    popularSelectFiltro();
+  } catch(e) {
+    if (e && e.name === 'AbortError') log('log-terminal', 'Coleta interrompida.', 'warn');
+    else {
+      console.warn('[BGP] Erro na coleta:', e);
+      log('log-terminal', 'Falha na coleta. Tente novamente.', 'err');
+    }
+  } finally {
+    coletaAbortController = null;
+    coletaCancelada = false;
+    setColetaUI(false);
+  }
 }
 
-async function coletarASN(asn, nome, logId) {
+async function coletarASN(asn, nome, logId, signal) {
   logId = logId || 'log-terminal';
+  assertNaoCancelado(signal);
   log(logId, 'Iniciando coleta: ' + nome + ' (AS' + asn + ')', 'info');
 
   log(logId, '-> GET announced-prefixes AS' + asn, 'data');
-  var pfData = await fetchRIPE('announced-prefixes/data.json?resource=AS' + asn);
+  var pfData = await fetchRIPE('announced-prefixes/data.json?resource=AS' + asn, signal);
+  assertNaoCancelado(signal);
   var prefixos = (pfData && pfData.data && pfData.data.prefixes)
     ? pfData.data.prefixes.map(function(p) { return p.prefix; }).filter(function(p) { return !p.includes(':'); })
     : [];
   log(logId, 'OK ' + prefixos.length + ' prefixos IPv4', 'ok');
 
   log(logId, '-> GET as-overview AS' + asn, 'data');
-  var asInfo = await fetchRIPE('as-overview/data.json?resource=AS' + asn);
+  var asInfo = await fetchRIPE('as-overview/data.json?resource=AS' + asn, signal);
+  assertNaoCancelado(signal);
   var holder = (asInfo && asInfo.data) ? asInfo.data.holder : nome;
   log(logId, 'OK Holder: ' + holder, 'ok');
 
   log(logId, '-> GET peeringdb.com/api/net?asn=' + asn, 'data');
   var pdbNetType = 'N/A', pdbPolicy = 'N/A', pdbWebsite = '--';
   try {
-    var pdbRes = await fetch('https://www.peeringdb.com/api/net?asn=' + asn);
+    var pdbRes = await fetch('https://www.peeringdb.com/api/net?asn=' + asn, signal ? { signal: signal } : undefined);
     if (pdbRes.ok) {
       var pdbData = await pdbRes.json();
       if (pdbData.data && pdbData.data.length > 0) {
@@ -1094,7 +1162,10 @@ async function coletarASN(asn, nome, logId) {
         pdbWebsite = pdbData.data[0].website || '--';
       }
     }
-  } catch(e) {}
+  } catch(e) {
+    if (e && e.name === 'AbortError') throw e;
+  }
+  assertNaoCancelado(signal);
   log(logId, 'OK Tipo: ' + pdbNetType + ' | Peering: ' + pdbPolicy, 'ok');
 
   var pf24 = filtrar24(prefixos);
@@ -1111,7 +1182,8 @@ async function coletarASN(asn, nome, logId) {
 
   if (pf24.length > 0) {
     log(logId, '-> GET looking-glass ' + pf24[0], 'data');
-    var lgData = await fetchRIPE('looking-glass/data.json?resource=' + pf24[0]);
+    var lgData = await fetchRIPE('looking-glass/data.json?resource=' + pf24[0], signal);
+    assertNaoCancelado(signal);
     var caminhos = [];
     if (lgData && lgData.data && lgData.data.rrcs) {
       lgData.data.rrcs.forEach(function(rrc) {
@@ -1132,7 +1204,9 @@ async function coletarASN(asn, nome, logId) {
   }
 
   // Persistir na API
+  assertNaoCancelado(signal);
   await dbSalvarEntry(asn, entry, pf24, state.analises[asn] || null);
+  assertNaoCancelado(signal);
 
   // UI coletor
   document.getElementById('coletor-resultado').style.display = '';
@@ -1174,37 +1248,68 @@ async function coletarASN(asn, nome, logId) {
 
 async function coletarTodos() {
   if (state.coletando) return;
-  state.coletando = true;
-  var btn = document.getElementById('btn-coletar');
-  if (btn) btn.disabled = true;
+  coletaAbortController = new AbortController();
+  coletaCancelada = false;
+  setColetaUI(true);
   var lista = Object.entries(OPERADORAS);
   log('log-terminal', '━━━ Coletando todas as ' + lista.length + ' operadoras ━━━', 'hi');
-  for (var i = 0; i < lista.length; i++) {
-    log('log-terminal', '[' + (i+1) + '/' + lista.length + '] ' + lista[i][0], 'data');
-    await coletarASN(lista[i][1], lista[i][0], 'log-terminal');
-    await sleep(200);
+  var coletadas = 0;
+  try {
+    for (var i = 0; i < lista.length; i++) {
+      assertNaoCancelado(coletaAbortController.signal);
+      log('log-terminal', '[' + (i+1) + '/' + lista.length + '] ' + lista[i][0], 'data');
+      await coletarASN(lista[i][1], lista[i][0], 'log-terminal', coletaAbortController.signal);
+      coletadas++;
+      await sleep(200);
+    }
+    log('log-terminal', 'OK Concluido — ' + coletadas + ' operadoras.', 'ok');
+  } catch(e) {
+    if (e && e.name === 'AbortError') {
+      log('log-terminal', 'Coleta interrompida — ' + coletadas + ' de ' + lista.length + ' operadoras concluídas.', 'warn');
+    } else {
+      console.warn('[BGP] Erro na coleta em massa:', e);
+      log('log-terminal', 'Falha durante a coleta em massa.', 'err');
+    }
+  } finally {
+    atualizarDashboard(); popularSelectFiltro();
+    coletaAbortController = null;
+    coletaCancelada = false;
+    setColetaUI(false);
   }
-  log('log-terminal', 'OK Concluido — ' + lista.length + ' operadoras.', 'ok');
-  atualizarDashboard(); popularSelectFiltro();
-  state.coletando = false;
-  if (btn) btn.disabled = false;
 }
 
 async function coletarGrupo(grupo) {
   var nomes = GRUPOS_OPERADORAS[grupo];
   if (!nomes) { coletarTodos(); return; }
   if (state.coletando) return;
-  state.coletando = true;
+  coletaAbortController = new AbortController();
+  coletaCancelada = false;
+  setColetaUI(true);
   log('log-terminal', '━━━ Grupo: ' + grupo + ' (' + nomes.length + ' ops) ━━━', 'hi');
-  for (var i = 0; i < nomes.length; i++) {
-    var asn = OPERADORAS[nomes[i]]; if (!asn) continue;
-    log('log-terminal', '[' + (i+1) + '/' + nomes.length + '] ' + nomes[i], 'info');
-    await coletarASN(asn, nomes[i], 'log-terminal');
-    await sleep(200);
+  var coletadas = 0;
+  try {
+    for (var i = 0; i < nomes.length; i++) {
+      assertNaoCancelado(coletaAbortController.signal);
+      var asn = OPERADORAS[nomes[i]]; if (!asn) continue;
+      log('log-terminal', '[' + (i+1) + '/' + nomes.length + '] ' + nomes[i], 'info');
+      await coletarASN(asn, nomes[i], 'log-terminal', coletaAbortController.signal);
+      coletadas++;
+      await sleep(200);
+    }
+    log('log-terminal', 'OK Grupo concluido — ' + coletadas + ' operadoras.', 'ok');
+  } catch(e) {
+    if (e && e.name === 'AbortError') {
+      log('log-terminal', 'Coleta do grupo interrompida — ' + coletadas + ' de ' + nomes.length + ' operadoras concluídas.', 'warn');
+    } else {
+      console.warn('[BGP] Erro na coleta do grupo:', e);
+      log('log-terminal', 'Falha durante a coleta do grupo.', 'err');
+    }
+  } finally {
+    atualizarDashboard(); popularSelectFiltro();
+    coletaAbortController = null;
+    coletaCancelada = false;
+    setColetaUI(false);
   }
-  log('log-terminal', 'OK Grupo concluido.', 'ok');
-  atualizarDashboard(); popularSelectFiltro();
-  state.coletando = false;
 }
 
 // ══════════════════════════════════════════════
@@ -1678,28 +1783,58 @@ var activeTab='bar';
 function setTab(tab,el){
   activeTab=tab;
   document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
-  el.classList.add('active');
+  if (el) el.classList.add('active');
   document.getElementById('comp-bar-panel').style.display    = tab==='bar'     ? '' : 'none';
   document.getElementById('comp-radar-panel').style.display  = tab==='radar'   ? '' : 'none';
   document.getElementById('comp-scatter-panel').style.display = tab==='scatter' ? '' : 'none';
   renderComparativo();
 }
 
+function setCompareSummary(id, title, subtitle) {
+  setText(id, title || '--');
+  setText(id + '-sub', subtitle || 'Sem dados');
+}
+
 function renderComparativo(){
   var keys=Object.keys(state.collected);
-  if(!keys.length){ document.getElementById('heatmap-container').innerHTML='<div class="empty"><div class="empty-icon">◫</div><div class="empty-text">Realize a coleta primeiro</div></div>'; return; }
+  if(!keys.length){
+    setCompareSummary('comp-top-prefixos', '--', 'Colete dados para calcular');
+    setCompareSummary('comp-top-24', '--', 'Colete dados para calcular');
+    setCompareSummary('comp-top-saltos', '--', 'Colete dados para calcular');
+    setCompareSummary('comp-top-risco', '--', 'Sem dados coletados');
+    document.getElementById('heatmap-container').innerHTML='<div class="empty"><div class="empty-icon">◫</div><div class="empty-text">Realize a coleta primeiro</div></div>';
+    return;
+  }
   var ops=keys.map(function(asn){return state.collected[asn].nome_op;});
   var prefs=keys.map(function(asn){return state.collected[asn].prefixos.length;});
   var p24s=keys.map(function(asn){return (state.prefixos24[asn]||[]).length;});
   var saltos=keys.map(function(asn){return (state.analises[asn]&&state.analises[asn].media_saltos)||0;});
   var pal=['#375dfb','#ffb454','#6e56cf','#d92d52','#2563eb','#64748b','#c73868','#b86b00','#5ea1ff','#111827'];
   var palArr=keys.map(function(_,i){return pal[i%pal.length];});
+  var rows=keys.map(function(asn,i){
+    return {
+      asn: asn,
+      nome: ops[i],
+      prefixos: prefs[i],
+      p24: p24s[i],
+      saltos: saltos[i],
+      risco: (state.analises[asn]&&state.analises[asn].desvio_suspeito)?100:Math.min(95, Math.round((saltos[i] || 0) * 12 + (p24s[i] ? 10 : 0)))
+    };
+  });
+  var topPrefixos=rows.slice().sort(function(a,b){return b.prefixos-a.prefixos;})[0];
+  var top24=rows.slice().sort(function(a,b){return b.p24-a.p24;})[0];
+  var topSaltos=rows.slice().sort(function(a,b){return b.saltos-a.saltos;})[0];
+  var topRisco=rows.slice().sort(function(a,b){return b.risco-a.risco;})[0];
+  setCompareSummary('comp-top-prefixos', topPrefixos.nome, topPrefixos.prefixos + ' prefixos IPv4');
+  setCompareSummary('comp-top-24', top24.nome, top24.p24 + ' prefixos /24');
+  setCompareSummary('comp-top-saltos', topSaltos.nome, (topSaltos.saltos || 0) + ' saltos médios');
+  setCompareSummary('comp-top-risco', topRisco.nome, topRisco.risco >= 80 ? 'maior ponto de atenção' : 'maior indicador relativo');
 
   if(window.Chart && activeTab==='bar'){
     if(chartComp1) chartComp1.destroy();
     chartComp1=new Chart(document.getElementById('chartComp1'),{type:'bar',
       data:{labels:ops,datasets:[
-        {label:'Total Prefixos',data:prefs,backgroundColor:'#375dfb22',borderColor:'#375dfb',borderWidth:1.5,borderRadius:6},
+        {label:'Total de prefixos',data:prefs,backgroundColor:'#375dfb22',borderColor:'#375dfb',borderWidth:1.5,borderRadius:6},
         {label:'Prefixos /24',data:p24s,backgroundColor:'#ffb4542b',borderColor:'#ffb454',borderWidth:1.5,borderRadius:6}
       ]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{padding:16,usePointStyle:true}}},
@@ -1710,7 +1845,7 @@ function renderComparativo(){
     var maxP=Math.max.apply(null,prefs.concat([1])),maxP24=Math.max.apply(null,p24s.concat([1])),maxS=Math.max.apply(null,saltos.concat([1]));
     if(chartRadar) chartRadar.destroy();
     chartRadar=new Chart(document.getElementById('chartRadar'),{type:'radar',
-      data:{labels:['Total Prefixos','Prefixos /24','Media Saltos','Tipo NSP','Presenca Geo'],
+      data:{labels:['Volume','/24','Saltos','Rede de trânsito','Cobertura'],
         datasets:keys.map(function(asn,i){
           var d=state.collected[asn],a=state.analises[asn];
           return {label:d.nome_op,data:[Math.round(prefs[i]/maxP*100),Math.round(p24s[i]/maxP24*100),Math.round(((a&&a.media_saltos)||0)/maxS*100),d.tipo_rede==='NSP'?100:50,Object.keys(d.regioes).length*20],
@@ -1729,7 +1864,7 @@ function renderComparativo(){
       options:{responsive:true,maintainAspectRatio:false,
         plugins:{legend:{labels:{padding:14,usePointStyle:true,pointStyle:'circle'}}},
         scales:{x:{title:{display:true,text:'Prefixos /24',color:'#526071'},grid:{color:'rgba(123,136,152,0.10)'}},
-                y:{title:{display:true,text:'Media Saltos',color:'#526071'},grid:{color:'rgba(123,136,152,0.10)'}}}}
+                y:{title:{display:true,text:'Média de saltos',color:'#526071'},grid:{color:'rgba(123,136,152,0.10)'}}}}
     });
   }
   renderHeatmap(keys,ops,prefs,p24s,saltos);
@@ -1737,15 +1872,15 @@ function renderComparativo(){
 
 function renderHeatmap(keys,ops,prefs,p24s,saltos){
   var container=document.getElementById('heatmap-container');
-  var metrics=['Prefixos','Prefixos /24','Saltos','Risco'];
+  var metrics=['Volume','/24','Saltos','Atenção'];
   var maxP=Math.max.apply(null,prefs.concat([1])),maxP24=Math.max.apply(null,p24s.concat([1])),maxS=Math.max.apply(null,saltos.concat([1]));
   var getColor=function(v){ var al=0.2+v*0.75; return v>0.7?'rgba(239,68,68,'+al+')':v>0.4?'rgba(234,179,8,'+al+')':'rgba(34,197,94,'+al+')'; };
-  var html='<div style="display:grid;grid-template-columns:110px repeat('+metrics.length+',1fr);gap:6px;margin-bottom:8px"><div></div>'+
+  var html='<div style="display:grid;grid-template-columns:minmax(140px,1.2fr) repeat('+metrics.length+',1fr);gap:6px;margin-bottom:8px"><div></div>'+
     metrics.map(function(m){return '<div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-align:center;padding:4px;text-transform:uppercase;letter-spacing:1.2px">'+m+'</div>';}).join('')+'</div>';
-  html+='<div style="display:grid;grid-template-columns:110px repeat('+metrics.length+',1fr);gap:6px">';
+  html+='<div style="display:grid;grid-template-columns:minmax(140px,1.2fr) repeat('+metrics.length+',1fr);gap:6px">';
   keys.forEach(function(asn,i){
     var vals=[prefs[i]/maxP,p24s[i]/maxP24,saltos[i]/maxS,(state.analises[asn]&&state.analises[asn].desvio_suspeito)?1:0.15];
-    html+='<div style="font-size:11px;color:var(--text2);display:flex;align-items:center;font-family:var(--mono);overflow:hidden;white-space:nowrap;text-overflow:ellipsis">'+ops[i].split(' ')[0]+'</div>';
+    html+='<div title="'+escapeHTML(ops[i])+'" style="font-size:11px;color:var(--text2);display:flex;align-items:center;font-family:var(--mono);overflow:hidden;white-space:nowrap;text-overflow:ellipsis">'+escapeHTML(ops[i])+'</div>';
     vals.forEach(function(v){ html+='<div class="heatmap-cell" style="height:38px;background:'+getColor(v)+';display:flex;align-items:center;justify-content:center;font-size:10px;font-family:var(--mono);color:rgba(255,255,255,0.85);font-weight:600;opacity:'+(0.7+v*0.3)+'">'+Math.round(v*100)+'%</div>'; });
   });
   html+='</div>';

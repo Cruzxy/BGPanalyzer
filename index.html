@@ -32,7 +32,6 @@
           </div>
           <div class="brand-copy">
             <div class="logo-name">BGP Analyzer</div>
-            <div class="logo-product">Route Intelligence</div>
           </div>
         </div>
         <div class="logo-tag">LIVE · RIPE RIS · stat.ripe.net</div>
@@ -378,6 +377,12 @@
                       <path d="M10 2A6 6 0 0 0 2 8M2 8v-3M2 8h3" />
                     </svg>
                     Todas
+                  </button>
+                  <button class="btn btn-danger-soft" id="btn-cancelar-coleta" onclick="cancelarColeta()" style="display:none">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M2 2l8 8M10 2l-8 8" />
+                    </svg>
+                    Parar
                   </button>
                 </div>
               </div>
@@ -852,28 +857,55 @@
 
           <div class="page-header">
             <div class="page-header-left">
-              <div class="page-title">Análise Comparativa</div>
-              <div class="page-desc">Compare as operadoras coletadas lado a lado</div>
+              <div class="page-title">Comparativo de Operadoras</div>
+              <div class="page-desc">Entenda rapidamente quais redes têm mais prefixos, mais /24 e mais pontos de atenção</div>
             </div>
           </div>
 
           <div class="explain-panel">
             <div>
               <span>O que faz</span>
-              <strong>Ajuda a comparar volume, /24 e risco</strong>
+              <strong>Transforma a coleta em ranking</strong>
             </div>
-            <p>Os gráficos mostram quais operadoras anunciam mais prefixos, quais têm mais /24 e quais tiveram caminhos mais longos ou sinais de risco.</p>
+            <p>Use esta tela depois da coleta para comparar operadoras lado a lado. O objetivo é enxergar volume, concentração de /24 e possíveis caminhos incomuns sem precisar ler todas as tabelas.</p>
+          </div>
+
+          <div class="compare-summary-grid" id="comp-summary-grid">
+            <div class="compare-summary-card">
+              <span>Maior volume</span>
+              <strong id="comp-top-prefixos">--</strong>
+              <small id="comp-top-prefixos-sub">Colete dados para calcular</small>
+            </div>
+            <div class="compare-summary-card">
+              <span>Mais /24</span>
+              <strong id="comp-top-24">--</strong>
+              <small id="comp-top-24-sub">Colete dados para calcular</small>
+            </div>
+            <div class="compare-summary-card">
+              <span>Mais saltos</span>
+              <strong id="comp-top-saltos">--</strong>
+              <small id="comp-top-saltos-sub">Colete dados para calcular</small>
+            </div>
+            <div class="compare-summary-card">
+              <span>Atenção</span>
+              <strong id="comp-top-risco">--</strong>
+              <small id="comp-top-risco-sub">Sem dados coletados</small>
+            </div>
           </div>
 
           <div class="tabs">
-            <div class="tab active" onclick="setTab('bar', this)">Barras</div>
-            <div class="tab" onclick="setTab('radar', this)">Radar</div>
-            <div class="tab" onclick="setTab('scatter', this)">Dispersão</div>
+            <div class="tab active" onclick="setTab('bar', this)">Volume</div>
+            <div class="tab" onclick="setTab('radar', this)">Perfil</div>
+            <div class="tab" onclick="setTab('scatter', this)">Rotas</div>
           </div>
 
           <div class="card" id="comp-bar-panel" style="margin-bottom:16px">
             <div class="card-header">
-              <div class="card-title">Total de prefixos por operadora</div>
+              <div>
+                <div class="card-title">Volume de prefixos por operadora</div>
+                <p class="card-subtitle">Compara o total de prefixos IPv4 e quantos deles são /24.</p>
+              </div>
+              <span class="tag">Volume</span>
             </div>
             <div class="card-inner">
               <div class="chart-wrap" style="height:300px">
@@ -884,7 +916,11 @@
 
           <div class="card" id="comp-radar-panel" style="display:none;margin-bottom:16px">
             <div class="card-header">
-              <div class="card-title">Comparação geral em escala comum</div>
+              <div>
+                <div class="card-title">Perfil comparado em escala comum</div>
+                <p class="card-subtitle">Normaliza os indicadores para comparar redes de tamanhos diferentes.</p>
+              </div>
+              <span class="tag">Perfil</span>
             </div>
             <div class="card-inner">
               <div class="chart-wrap" style="height:360px">
@@ -895,7 +931,11 @@
 
           <div class="card" id="comp-scatter-panel" style="display:none;margin-bottom:16px">
             <div class="card-header">
-              <div class="card-title">Relação entre /24 e média de saltos</div>
+              <div>
+                <div class="card-title">Relação entre /24 e saltos de rota</div>
+                <p class="card-subtitle">Ajuda a localizar redes com muitos /24 e caminhos BGP mais longos.</p>
+              </div>
+              <span class="tag">Rotas</span>
             </div>
             <div class="card-inner">
               <div class="chart-wrap" style="height:300px">
@@ -906,8 +946,11 @@
 
           <div class="card">
             <div class="card-header">
-              <div class="card-title">Mapa de risco por operadora</div>
-              <span class="tag">Resumo visual</span>
+              <div>
+                <div class="card-title">Mapa de atenção por operadora</div>
+                <p class="card-subtitle">Quanto mais forte a cor, maior o indicador relativo naquela métrica.</p>
+              </div>
+              <span class="tag">Atenção</span>
             </div>
             <div class="card-inner" id="heatmap-container">
               <div class="empty">
@@ -935,12 +978,20 @@
                 <span class="page-desc-tag">RIPE Stat</span>
               </div>
             </div>
-            <button class="btn btn-primary btn-sm" onclick="iniciarMitigacaoScan()">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="5" cy="5" r="4"/><path d="M11 11L8 8"/>
-              </svg>
-              Analisar Todos os Prefixos
-            </button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" onclick="iniciarMitigacaoScan()">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="5" cy="5" r="4"/><path d="M11 11L8 8"/>
+                </svg>
+                Analisar Todos os Prefixos
+              </button>
+              <button class="btn btn-danger-soft btn-sm" id="btn-mit-cancel-top" onclick="cancelarMitigacaoScan()" style="display:none">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M2 2l8 8M10 2l-8 8"/>
+                </svg>
+                Parar análise
+              </button>
+            </div>
           </div>
 
           <div class="explain-panel">

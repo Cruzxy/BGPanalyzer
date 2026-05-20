@@ -944,6 +944,15 @@ body::before {
   letter-spacing: 0.7px; color: var(--text2);
 }
 
+.card-subtitle {
+  color: var(--text3);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 4px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 /* ─── STAT CARDS ──────────────────────────── */
 .stat-card {
   background:
@@ -1143,6 +1152,48 @@ tbody td.td-mono   { font-family: var(--mono); }
 }
 
 /* ─── TABS ────────────────────────────────── */
+.compare-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.compare-summary-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,251,252,0.82));
+  box-shadow: var(--shadow-xs);
+  padding: 16px;
+  min-height: 116px;
+}
+
+.compare-summary-card span {
+  display: block;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 9px;
+}
+
+.compare-summary-card strong {
+  display: block;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.25;
+  margin-bottom: 7px;
+}
+
+.compare-summary-card small {
+  color: var(--text3);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .tabs {
   display: flex; gap: 2px;
   background: var(--surface3); border-radius: 10px; padding: 3px;
@@ -1446,6 +1497,7 @@ tbody td.td-mono   { font-family: var(--mono); }
   .g4 { grid-template-columns: repeat(2,1fr); }
   .g3 { grid-template-columns: repeat(2,1fr); }
   .g21 { grid-template-columns: 1fr; }
+  .compare-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .module-guide { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .glossary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .prefix-insight-grid { grid-template-columns: 1fr; }
@@ -1468,6 +1520,7 @@ tbody td.td-mono   { font-family: var(--mono); }
   .brief-grid { grid-template-columns: 1fr; }
   .map-node { min-width: 62px; height: 30px; padding: 0 9px; font-size: 9px; }
   .node-core { min-width: 82px; height: 38px; }
+  .compare-summary-grid { grid-template-columns: 1fr; }
   .module-guide { grid-template-columns: 1fr; }
   .glossary-grid { grid-template-columns: 1fr; }
   .glossary-head { align-items: flex-start; flex-direction: column; }
