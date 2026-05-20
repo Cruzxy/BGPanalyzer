@@ -210,45 +210,20 @@
                 <div><span>Dados</span><strong>Coletas salvas para análise</strong></div>
               </div>
             </div>
-            <div class="signal-map" aria-hidden="true">
-              <div class="signal-grid"></div>
-              <span class="route route-a"></span>
-              <span class="route route-b"></span>
-              <span class="route route-c"></span>
-              <span class="map-node node-core">AS28573</span>
-              <span class="map-node node-edge node-a">IX.br</span>
-              <span class="map-node node-edge node-b">RRC</span>
-              <span class="map-node node-edge node-c">MOAS</span>
-              <span class="map-node node-edge node-d">/24</span>
-              <div class="signal-readout">
-                <span>Route health</span>
-                <strong>live</strong>
+            <div class="dashboard-brief" aria-label="Resumo do dashboard">
+              <div class="brief-head">
+                <span>Status geral</span>
+                <strong id="dash-next-step">Colete uma operadora para começar</strong>
               </div>
+              <div class="brief-grid">
+                <div><span>Coletadas</span><strong id="dash-collected-ops">0</strong></div>
+                <div><span>Prefixos</span><strong id="dash-brief-prefixos">0</strong></div>
+                <div><span>/24</span><strong id="dash-brief-24">0</strong></div>
+                <div><span>Alertas</span><strong id="dash-brief-alertas">0</strong></div>
+              </div>
+              <div class="brief-note" id="dash-brief-note">Os indicadores serão preenchidos depois da primeira coleta.</div>
             </div>
           </section>
-
-          <div class="module-guide">
-            <button class="guide-card" onclick="navigate(document.querySelector('[data-page=coletor]'),'coletor')">
-              <span class="guide-kicker">Coletor</span>
-              <strong>Busca os blocos IP de cada rede</strong>
-              <span>Você escolhe uma operadora ou digita um ASN. O sistema consulta fontes públicas e salva o resultado.</span>
-            </button>
-            <button class="guide-card" onclick="navigate(document.querySelector('[data-page=analisador]'),'analisador')">
-              <span class="guide-kicker">Analisador</span>
-              <strong>Mostra o caminho da rota</strong>
-              <span>AS-PATH é a lista de redes por onde o tráfego passa até chegar ao prefixo.</span>
-            </button>
-            <button class="guide-card" onclick="navigate(document.querySelector('[data-page=mitigacao]'),'mitigacao')">
-              <span class="guide-kicker">Mitigacao</span>
-              <strong>Procura sinais de mitigação</strong>
-              <span>MOAS aparece quando o mesmo prefixo é anunciado por mais de um ASN.</span>
-            </button>
-            <button class="guide-card" onclick="navigate(document.querySelector('[data-page=dados]'),'dados')">
-              <span class="guide-kicker">Base</span>
-              <strong>Organiza a base coletada</strong>
-              <span>Gera arquivos de exportação e uma tabela pronta para análise.</span>
-            </button>
-          </div>
 
           <div class="glossary-panel" aria-label="Glossário rápido de termos BGP">
             <div class="glossary-head">
@@ -266,38 +241,6 @@
               <div><b>Upstream</b><span>Rede usada como saída para a Internet. Ter 2 ou mais caminhos aumenta a redundância.</span></div>
               <div><b>RIPE Stat</b><span>Fonte pública que mostra anúncios BGP, prefixos e caminhos vistos na Internet.</span></div>
               <div><b>PeeringDB</b><span>Base pública com informações sobre redes, pontos de troca e tipo de provedor.</span></div>
-            </div>
-          </div>
-
-          <div class="ops-panel">
-            <div class="ops-card">
-              <div class="ops-kicker"><span>Operacao sugerida</span><span class="ops-chip"><i class="ops-dot"></i>online</span></div>
-              <h3>Fluxo recomendado em 3 etapas</h3>
-              <div class="ops-stack">
-                <div class="ops-step"><b>1</b><span>Coletar uma operadora, um ASN manual ou um grupo regional.</span></div>
-                <div class="ops-step"><b>2</b><span>Ver os prefixos /24 e o caminho das rotas.</span></div>
-                <div class="ops-step"><b>3</b><span>Analisar MOAS para encontrar possíveis mitigadores DDoS.</span></div>
-              </div>
-            </div>
-            <div class="ops-card">
-              <div class="ops-kicker"><span>Base de dados</span><span>Node</span></div>
-              <h3>Dados centralizados fora do navegador</h3>
-              <p>A interface envia tudo para a API. A API salva no MongoDB ou, em desenvolvimento, em um arquivo local.</p>
-              <div class="ops-chip-row">
-                <span class="ops-chip">/api/stats</span>
-                <span class="ops-chip">/api/operadoras</span>
-                <span class="ops-chip">/api/mitigacao</span>
-              </div>
-            </div>
-            <div class="ops-card">
-              <div class="ops-kicker"><span>Leitura do painel</span><span>Resumo</span></div>
-              <h3>Resumo primeiro, detalhe depois</h3>
-              <p>Os cards mostram o essencial. As tabelas e gráficos ficam logo abaixo para investigação e exportação.</p>
-              <div class="ops-chip-row">
-                <span class="ops-chip">Resumo</span>
-                <span class="ops-chip">Detalhes</span>
-                <span class="ops-chip">CSV</span>
-              </div>
             </div>
           </div>
 
@@ -321,7 +264,7 @@
               <div class="stat-icon">/24</div>
             </div>
             <div class="stat-card c-danger">
-              <div class="stat-label">Desvios Suspeitos</div>
+              <div class="stat-label">Caminhos incomuns</div>
               <div class="stat-value" id="dash-desvios" style="font-size:20px;color:var(--text3);font-weight:500">Aguardando</div>
               <div class="stat-sub">possível mitigação DDoS</div>
               <div class="stat-icon">ALR</div>
@@ -332,7 +275,7 @@
             <div class="card">
               <div class="card-header">
                 <div class="card-title">Prefixos por Operadora</div>
-                <span class="tag">Bar Chart</span>
+                <span class="tag">Comparativo</span>
               </div>
               <div class="card-inner">
                 <div class="chart-wrap" style="height:230px">
@@ -343,7 +286,7 @@
             <div class="card">
               <div class="card-header">
                 <div class="card-title">Distribuição de Prefixos</div>
-                <span class="tag">Doughnut</span>
+                <span class="tag">Resumo</span>
               </div>
               <div class="card-inner">
                 <div class="chart-wrap" style="height:230px">
@@ -525,13 +468,19 @@
                   <input type="text" id="inp-prefixo" class="form-control" placeholder="ex: 177.71.128.0/24"
                     value="177.71.128.0/24" />
                 </div>
-                <div style="display:flex;align-items:flex-end;padding-bottom:1px">
-                  <button class="btn btn-primary" onclick="analisarPrefixo()">
+                <div style="display:flex;align-items:flex-end;padding-bottom:1px;gap:8px">
+                  <button class="btn btn-primary" id="btn-analisar-prefixo" onclick="analisarPrefixo()">
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
                       <circle cx="5" cy="5" r="4" />
                       <path d="M11 11L8 8" />
                     </svg>
                     Analisar
+                  </button>
+                  <button class="btn btn-danger-soft" id="btn-cancelar-analise" onclick="cancelarAnalisePrefixo()" style="display:none">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M2 2l8 8M10 2l-8 8" />
+                    </svg>
+                    Parar
                   </button>
                 </div>
               </div>
@@ -550,6 +499,19 @@
           </div>
 
           <div id="analise-resultado" style="display:none">
+            <div class="card" style="margin-bottom:16px">
+              <div class="card-header">
+                <div class="card-title">Dono e localização do prefixo</div>
+                <span class="tag">RIPE + GeoLite</span>
+              </div>
+              <div class="card-inner" id="an-prefix-info">
+                <div class="empty">
+                  <div class="empty-icon">IP</div>
+                  <div class="empty-text">Analise um prefixo para ver dono e localização aproximada</div>
+                </div>
+              </div>
+            </div>
+
             <div class="grid g4" style="margin-bottom:16px">
               <div class="stat-card">
                 <div class="stat-label">Desvio Suspeito</div>

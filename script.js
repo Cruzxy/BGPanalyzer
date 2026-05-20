@@ -233,6 +233,8 @@ const GRUPOS_OPERADORAS = {
 let state = { collected: {}, prefixos24: {}, analises: {}, coletando: false };
 let chartPrefixos = null, chartDist = null, chartPaths = null,
     chartComp1 = null, chartRadar = null, chartScatter = null;
+let analiseAbortController = null;
+let analiseRodando = false;
 
 if (window.Chart) {
   Chart.defaults.color = '#526071';
@@ -1036,12 +1038,15 @@ function popularSelectFiltro() {
 // ══════════════════════════════════════════════
 //  API
 // ══════════════════════════════════════════════
-async function fetchRIPE(endpoint) {
+async function fetchRIPE(endpoint, signal) {
   try {
-    var res = await fetch('https://stat.ripe.net/data/' + endpoint);
+    var res = await fetch('https://stat.ripe.net/data/' + endpoint, signal ? { signal: signal } : undefined);
     if (!res.ok) throw new Error('err');
     return await res.json();
-  } catch(e) { return null; }
+  } catch(e) {
+    if (e && e.name === 'AbortError') throw e;
+    return null;
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -1205,61 +1210,192 @@ async function coletarGrupo(grupo) {
 // ══════════════════════════════════════════════
 //  ANALISADOR
 // ══════════════════════════════════════════════
+function setAnaliseUI(ativo) {
+  analiseRodando = ativo;
+  var btn = document.getElementById('btn-analisar-prefixo');
+  var cancel = document.getElementById('btn-cancelar-analise');
+  if (btn) btn.disabled = ativo;
+  if (cancel) {
+    cancel.style.display = ativo ? '' : 'none';
+    cancel.disabled = false;
+  }
+}
+
+function cancelarAnalisePrefixo() {
+  if (!analiseRodando) return;
+  if (analiseAbortController) analiseAbortController.abort();
+  var cancel = document.getElementById('btn-cancelar-analise');
+  if (cancel) cancel.disabled = true;
+  log('log-analise', 'Parando análise do prefixo...', 'warn');
+}
+
+function nomePais(codigo) {
+  if (!codigo) return '';
+  try {
+    if (window.Intl && Intl.DisplayNames) {
+      var nomes = new Intl.DisplayNames(['pt-BR'], { type: 'region' });
+      return nomes.of(String(codigo).toUpperCase()) || codigo;
+    }
+  } catch(e) {}
+  return codigo;
+}
+
+function extrairLocalizacaoGeoLite(geoData) {
+  var located = geoData && geoData.data && geoData.data.located_resources
+    ? geoData.data.located_resources[0] : null;
+  var locs = located && located.locations ? located.locations.slice() : [];
+  locs.sort(function(a, b) {
+    return (b.covered_percentage || 0) - (a.covered_percentage || 0);
+  });
+  return locs[0] || null;
+}
+
+function renderPrefixoInfo(prefixo, overviewData, geoData) {
+  var el = document.getElementById('an-prefix-info');
+  if (!el) return;
+
+  var data = overviewData && overviewData.data ? overviewData.data : {};
+  var asns = Array.isArray(data.asns) ? data.asns : [];
+  var loc = extrairLocalizacaoGeoLite(geoData);
+  var pais = loc ? nomePais(loc.country) : '';
+  var local = loc ? [loc.city, pais || loc.country].filter(Boolean).join(', ') : 'Localização não encontrada';
+  var coords = loc && loc.latitude !== undefined && loc.longitude !== undefined
+    ? Number(loc.latitude).toFixed(4) + ', ' + Number(loc.longitude).toFixed(4)
+    : '--';
+  var cobertura = loc && loc.covered_percentage !== undefined
+    ? Math.round(Number(loc.covered_percentage) * 10) / 10 + '%'
+    : '--';
+  var origem = asns.length
+    ? asns.map(function(a) {
+        return '<span class="owner-chip"><b>AS' + escapeHTML(a.asn) + '</b>' +
+          escapeHTML(a.holder || 'Nome não informado') + '</span>';
+      }).join('')
+    : '<span class="owner-chip"><b>--</b>Origem não encontrada no RIPE</span>';
+  var anunciado = data.announced === true ? 'Anunciado' : data.announced === false ? 'Não anunciado' : 'Não informado';
+  var statusClass = data.announced === true ? 'badge-ok' : data.announced === false ? 'badge-warn' : 'badge-neutral';
+
+  el.innerHTML =
+    '<div class="prefix-insight-grid">' +
+      '<div class="prefix-map-card">' +
+        '<div class="prefix-map-pin">LOC</div>' +
+        '<div><strong>' + escapeHTML(local) + '</strong><span>Localização aproximada por GeoLite. Pode representar o bloco de rede, não necessariamente o endereço físico do cliente.</span></div>' +
+      '</div>' +
+      '<div class="prefix-detail-stack">' +
+        '<div class="kv-grid">' +
+          '<div class="kv-item"><div class="kv-k">Prefixo analisado</div><div class="kv-v">' + escapeHTML(prefixo) + '</div></div>' +
+          '<div class="kv-item"><div class="kv-k">Bloco anunciado</div><div class="kv-v">' + escapeHTML(data.resource || prefixo) + '</div></div>' +
+          '<div class="kv-item"><div class="kv-k">Status BGP</div><div class="kv-v"><span class="badge ' + statusClass + '">' + escapeHTML(anunciado) + '</span></div></div>' +
+          '<div class="kv-item"><div class="kv-k">Registro</div><div class="kv-v" style="font-size:11px">' + escapeHTML((data.block && data.block.desc) || '--') + '</div></div>' +
+          '<div class="kv-item"><div class="kv-k">Coordenadas</div><div class="kv-v">' + escapeHTML(coords) + '</div></div>' +
+          '<div class="kv-item"><div class="kv-k">Cobertura geo</div><div class="kv-v">' + escapeHTML(cobertura) + '</div></div>' +
+        '</div>' +
+        '<div><div class="kv-k" style="margin-bottom:8px">Dono / ASN de origem</div><div class="owner-list">' + origem + '</div></div>' +
+      '</div>' +
+    '</div>';
+}
+
 async function analisarPrefixo() {
   var prefixo = document.getElementById('inp-prefixo').value.trim();
   if (!prefixo) { alert('Informe um prefixo IP.'); return; }
-  log('log-analise', 'Consultando Looking Glass para ' + prefixo, 'info');
-  var lgData = await fetchRIPE('looking-glass/data.json?resource=' + prefixo);
-  var caminhos = [];
-  if (lgData && lgData.data && lgData.data.rrcs) {
-    lgData.data.rrcs.forEach(function(rrc) {
-      if (rrc.peers) rrc.peers.forEach(function(peer) {
-        if (peer.as_path) {
-          var parts = peer.as_path.split(' ').map(Number).filter(function(n) { return !isNaN(n); });
-          caminhos.push({ rrc: rrc.rrc || (rrc.location||'').split(',')[0]||'RRC', path: parts });
-        }
-      });
-    });
-  }
-  log('log-analise', 'OK ' + caminhos.length + ' caminhos encontrados em ' + new Set(caminhos.map(function(c){ return c.rrc; })).size + ' observadores RIPE', 'ok');
-  var analise = detectarDesvio(caminhos);
-  log('log-analise', 'OK media de saltos: ' + analise.media_saltos + ' | caminhos unicos: ' + analise.paths_unicos, 'ok');
-  if (analise.desvio_suspeito) { log('log-analise','Caminho incomum detectado','warn'); }
-  else { log('log-analise','Caminho dentro do esperado','ok'); }
+  if (analiseRodando) return;
+
+  analiseAbortController = new AbortController();
+  var signal = analiseAbortController.signal;
+  setAnaliseUI(true);
 
   document.getElementById('analise-resultado').style.display = '';
-  document.getElementById('an-desvio').innerHTML = analise.desvio_suspeito
-    ? '<span class="badge badge-danger" style="font-size:15px">Sim</span>'
-    : '<span class="badge badge-ok" style="font-size:15px">Nao</span>';
-  document.getElementById('an-saltos').textContent = analise.media_saltos;
-  document.getElementById('an-unique').textContent = analise.paths_unicos;
-  document.getElementById('an-total').textContent  = analise.total_paths;
-
-  var maxF = analise.asn_mais_frequentes[0] ? analise.asn_mais_frequentes[0][1] : 1;
-  document.getElementById('an-asn-freq').innerHTML = analise.asn_mais_frequentes.map(function(it) {
-    return '<div class="progress-wrap"><div class="progress-info"><span class="progress-label">AS'+it[0]+'</span><span class="progress-val">'+it[1]+' ocorr.</span></div>'+
-      '<div class="progress-bar"><div class="progress-fill" style="width:'+Math.round(it[1]/maxF*100)+'%;background:var(--blue)"></div></div></div>';
-  }).join('');
-
-  var comp = {};
-  caminhos.forEach(function(c){ var l=c.path.length; comp[l]=(comp[l]||0)+1; });
-  var lbls = Object.keys(comp).sort(function(a,b){return a-b;});
-  var vals = lbls.map(function(l){return comp[l];});
-  if (window.Chart) {
-    if (chartPaths) chartPaths.destroy();
-    chartPaths = new Chart(document.getElementById('chartPaths'), {
-      type:'bar', data:{ labels:lbls.map(function(l){return l+' saltos';}), datasets:[{label:'Caminhos',data:vals,backgroundColor:'#375dfb22',borderColor:'#375dfb',borderWidth:1.5,borderRadius:6}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(123,136,152,0.12)'}},x:{grid:{display:false}}}}
-    });
+  var infoEl = document.getElementById('an-prefix-info');
+  if (infoEl) {
+    infoEl.innerHTML = '<div class="empty"><div class="empty-icon">IP</div><div class="empty-text">Buscando dono, localização e caminhos do prefixo...</div></div>';
   }
 
-  var pd = document.getElementById('path-display'); pd.innerHTML='';
-  caminhos.slice(0,30).forEach(function(c){
-    var row=document.createElement('div'); row.className='path-row';
-    row.innerHTML='<span class="path-rrc">'+c.rrc+'</span>'+
-      c.path.map(function(a,i){return (i>0?'<span class="path-arrow">›</span>':'')+'<span class="path-asn">AS'+a+'</span>';}).join('');
-    pd.appendChild(row);
-  });
+  try {
+    log('log-analise', 'Consultando dono, localização e caminhos para ' + prefixo, 'info');
+    var reqs = await Promise.all([
+      fetchRIPE('prefix-overview/data.json?resource=' + encodeURIComponent(prefixo), signal),
+      fetchRIPE('maxmind-geo-lite/data.json?resource=' + encodeURIComponent(prefixo), signal),
+      fetchRIPE('looking-glass/data.json?resource=' + encodeURIComponent(prefixo), signal)
+    ]);
+    if (signal.aborted) {
+      var abortErr = new Error('cancelado');
+      abortErr.name = 'AbortError';
+      throw abortErr;
+    }
+
+    var overviewData = reqs[0];
+    var geoData = reqs[1];
+    var lgData = reqs[2];
+    renderPrefixoInfo(prefixo, overviewData, geoData);
+
+    var caminhos = [];
+    if (lgData && lgData.data && lgData.data.rrcs) {
+      lgData.data.rrcs.forEach(function(rrc) {
+        if (rrc.peers) rrc.peers.forEach(function(peer) {
+          if (peer.as_path) {
+            var parts = peer.as_path.split(' ').map(Number).filter(function(n) { return !isNaN(n); });
+            caminhos.push({ rrc: rrc.rrc || (rrc.location||'').split(',')[0]||'RRC', path: parts });
+          }
+        });
+      });
+    }
+    log('log-analise', 'OK ' + caminhos.length + ' caminhos encontrados em ' + new Set(caminhos.map(function(c){ return c.rrc; })).size + ' observadores RIPE', 'ok');
+    var analise = detectarDesvio(caminhos);
+    log('log-analise', 'OK media de saltos: ' + analise.media_saltos + ' | caminhos unicos: ' + analise.paths_unicos, 'ok');
+    if (analise.desvio_suspeito) { log('log-analise','Caminho incomum detectado','warn'); }
+    else { log('log-analise','Caminho dentro do esperado','ok'); }
+
+    document.getElementById('an-desvio').innerHTML = analise.desvio_suspeito
+      ? '<span class="badge badge-danger" style="font-size:15px">Sim</span>'
+      : '<span class="badge badge-ok" style="font-size:15px">Nao</span>';
+    document.getElementById('an-saltos').textContent = analise.media_saltos;
+    document.getElementById('an-unique').textContent = analise.paths_unicos;
+    document.getElementById('an-total').textContent  = analise.total_paths;
+
+    var maxF = analise.asn_mais_frequentes[0] ? analise.asn_mais_frequentes[0][1] : 1;
+    document.getElementById('an-asn-freq').innerHTML = analise.asn_mais_frequentes.length
+      ? analise.asn_mais_frequentes.map(function(it) {
+          return '<div class="progress-wrap"><div class="progress-info"><span class="progress-label">AS'+it[0]+'</span><span class="progress-val">'+it[1]+' ocorr.</span></div>'+
+            '<div class="progress-bar"><div class="progress-fill" style="width:'+Math.round(it[1]/maxF*100)+'%;background:var(--blue)"></div></div></div>';
+        }).join('')
+      : '<div class="empty"><div class="empty-icon">AS</div><div class="empty-text">Nenhum ASN encontrado nos caminhos</div></div>';
+
+    var comp = {};
+    caminhos.forEach(function(c){ var l=c.path.length; comp[l]=(comp[l]||0)+1; });
+    var lbls = Object.keys(comp).sort(function(a,b){return a-b;});
+    var vals = lbls.map(function(l){return comp[l];});
+    if (window.Chart) {
+      if (chartPaths) chartPaths.destroy();
+      chartPaths = new Chart(document.getElementById('chartPaths'), {
+        type:'bar', data:{ labels:lbls.length ? lbls.map(function(l){return l+' saltos';}) : ['Sem dados'], datasets:[{label:'Caminhos',data:vals.length ? vals : [0],backgroundColor:'#375dfb22',borderColor:'#375dfb',borderWidth:1.5,borderRadius:6}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(123,136,152,0.12)'}},x:{grid:{display:false}}}}
+      });
+    }
+
+    var pd = document.getElementById('path-display'); pd.innerHTML='';
+    if (!caminhos.length) {
+      pd.innerHTML = '<div class="empty"><div class="empty-icon">RRC</div><div class="empty-text">Nenhum caminho BGP retornado para este prefixo</div></div>';
+    } else {
+      caminhos.slice(0,30).forEach(function(c){
+        var row=document.createElement('div'); row.className='path-row';
+        row.innerHTML='<span class="path-rrc">'+escapeHTML(c.rrc)+'</span>'+
+          c.path.map(function(a,i){return (i>0?'<span class="path-arrow">›</span>':'')+'<span class="path-asn">AS'+escapeHTML(a)+'</span>';}).join('');
+        pd.appendChild(row);
+      });
+    }
+  } catch(e) {
+    if (e && e.name === 'AbortError') {
+      if (infoEl) {
+        infoEl.innerHTML = '<div class="empty"><div class="empty-icon">STOP</div><div class="empty-text">Análise interrompida pelo usuário</div></div>';
+      }
+      log('log-analise', 'Análise cancelada.', 'warn');
+    } else {
+      console.warn('[BGP] Erro ao analisar prefixo:', e);
+      log('log-analise', 'Falha ao analisar prefixo. Tente novamente.', 'err');
+    }
+  } finally {
+    setAnaliseUI(false);
+    analiseAbortController = null;
+  }
 }
 
 function analisarDoPrefixo(pref) {
@@ -1284,6 +1420,14 @@ function atualizarDashboard() {
   document.getElementById('dash-total-pref').textContent = keys.length ? totalPref : '--';
   document.getElementById('dash-total-24').textContent   = keys.length ? total24  : '--';
   document.getElementById('dash-desvios').textContent    = keys.length ? desvios  : '--';
+  setText('dash-collected-ops', keys.length);
+  setText('dash-brief-prefixos', totalPref);
+  setText('dash-brief-24', total24);
+  setText('dash-brief-alertas', desvios);
+  setText('dash-next-step', keys.length ? 'Base pronta para análise' : 'Colete uma operadora para começar');
+  setText('dash-brief-note', keys.length
+    ? 'Use os gráficos abaixo para comparar operadoras e abra o Analisador para investigar um prefixo específico.'
+    : 'Os indicadores serão preenchidos depois da primeira coleta.');
 
   var sl = document.getElementById('dash-status-list');
   if (!keys.length) {
@@ -1663,6 +1807,7 @@ function iniciarAplicacao() {
       });
     } else {
       log('log-terminal', '→ Banco vazio. Use o Coletor BGP para iniciar.', 'info');
+      atualizarDashboard();
     }
 
     log('log-terminal', '→ MA: Sao Luis (15) | Imperatriz/Sul (12) | Interior (29)', 'info');
