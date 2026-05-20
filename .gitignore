@@ -21,3 +21,22 @@ desktop.ini
 
 # Node (caso use servidor local)
 node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Ambientes e configurações locais
+.env
+.env.*
+!.env.example
+
+data/*.dev.json
+data/*.tmp
+
+# Cobertura e artefatos de testes
+coverage/
+.nyc_output/
+
+# Integrações locais / automação
+.codex/

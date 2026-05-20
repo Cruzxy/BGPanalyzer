@@ -59,42 +59,25 @@ Estruturar um mecanismo analítico capaz de **coletar, armazenar, minerar e inte
 BGP ANALYZER — Arquitetura
 ├── index.html          → Interface SPA (Single Page Application)
 ├── style.css           → Design system — dark mode + glassmorphism
-├── db.js               → Camada IndexedDB (5 object stores estruturados)
+├── server.js           → API Node.js + MongoDB + servidor da UI
+├── db.js               → Cliente REST BGP_DB usado pela interface
 └── script.js           → Lógica da aplicação + 95+ operadoras
 ```
 
-### Banco de Dados — IndexedDB
+### Banco de Dados — API Node.js + MongoDB
 
-```
-bgp_analyzer_db (versão 3)
+```sql
+-- bgp_analyzer (MongoDB, acessado pela API Node)
 │
-├── operadoras       keyPath: asn
-│   ├── index: nome_op
-│   ├── index: tipo_rede
-│   └── index: coletado_em
-│
-├── prefixos         keyPath: id (asn_prefixo)
-│   ├── index: asn
-│   ├── index: prefixo
-│   └── index: mascara  ← filtra /24 com IDBKeyRange
-│
-├── analises         keyPath: asn
-│   ├── index: desvio_suspeito
-│   └── index: analisado_em
-│
-├── mitigacao        keyPath: id (prefixo_asnMitigador)
-│   ├── index: prefixo
-│   ├── index: asn_dono
-│   ├── index: asn_mitigador
-│   └── index: detectado_em
-│
-└── eventos          keyPath: id (autoIncrement)
-    ├── index: tipo      ← 'coleta' | 'analise' | 'scan'
-    ├── index: asn
-    └── index: timestamp
+├── operadoras       índice único: asn
+├── prefixos         índice único: id (asn_prefixo)
+├── analises         índice único: asn
+├── mitigacao        índice único: id (prefixo_asnMitigador)
+├── eventos          histórico operacional
+└── meta             engine, schema e atualização
 ```
 
-> **Por que IndexedDB?** Diferente do `localStorage` (limitado a ~5MB de JSON serializado), o IndexedDB é um banco transacional nativo do browser — suporta transações ACID, índices, cursor para queries, e pode armazenar centenas de MB de dados estruturados sem serialização.
+> A interface nao grava mais dados no browser. O objeto `BGP_DB` agora e um cliente REST que envia tudo para `/api`, e a API persiste em MongoDB. Se o MongoDB nao estiver instalado no ambiente de desenvolvimento, o servidor usa um fallback em `data/bgp-analyzer.dev.json` para manter a UI testavel.
 
 ### Stack Tecnológico
 
@@ -105,7 +88,9 @@ bgp_analyzer_db (versão 3)
 | **Tipografia** | IBM Plex Mono + Geist (Google Fonts) |
 | **Dados BGP** | RIPE NCC Stat API (`stat.ripe.net`) |
 | **Dados de Rede** | PeeringDB REST API |
-| **Persistência** | **IndexedDB** (banco estruturado — 5 object stores com índices) |
+| **Backend/API** | Node.js + Express |
+| **Persistência** | MongoDB via driver oficial (`mongodb`) |
+| **Fallback dev** | JSON local em `data/bgp-analyzer.dev.json` |
 | **Design** | SaaS Dashboard — Dark Mode + Glassmorphism |
 
 ---
@@ -204,63 +189,56 @@ SELEÇÃO → PRÉ-PROCESSAMENTO → TRANSFORMAÇÃO → MINERAÇÃO → INTERPR
 ## 🚀 Como Usar
 
 ### Pré-requisitos
-- Navegador moderno com suporte a ES6+ e **IndexedDB** (Chrome, Firefox, Edge — qualquer versão recente)
-- Conexão com a Internet (para consultas às APIs RIPE e PeeringDB)
-- **Nenhuma instalação necessária** — aplicação 100% client-side (HTML + JS puro)
+- Navegador moderno com suporte a **WebAssembly** (Chrome, Firefox, Edge — qualquer versão recente)
+- Node.js 20+
+- MongoDB local ou remoto configurado em `MONGODB_URI`
+- Conexão com a Internet (para consultas às APIs RIPE, PeeringDB e para carregar Chart.js do CDN)
 
 ---
 
-### ▶ Opção 1 — Abrir direto no navegador *(mais simples)*
+### ▶ Opção 1 — Rodar API + UI na porta 80
 
 ```
-1. Clone ou baixe o repositório
-2. Dê duplo clique em  index.html
-3. O navegador abre o sistema — pronto!
+npm install
+copy .env.example .env
+npm start
+# Acesse: http://localhost
 ```
 
-> ✅ **Funciona offline para a interface**. As coletas de dados precisam de internet.
+> A API serve a propria interface e os endpoints REST em `/api`.
 
 ---
 
-### ▶ Opção 2 — Live Server (VS Code) *(recomendado para desenvolvimento)*
+### ▶ Opção 2 — MongoDB remoto
 
-Se você usa **VS Code**, instale a extensão **Live Server** (Ritwick Dey):
+Configure `.env`:
 
 ```
-1. Abra a pasta BGPanalyzer no VS Code
-2. Clique com o botão direito em  index.html
-3. Selecione "Open with Live Server"
-4. Acesse:  http://127.0.0.1:5500
+MONGODB_URI=mongodb+srv://usuario:senha@cluster.mongodb.net
+MONGODB_DB=bgp_analyzer
+PORT=80
 ```
-
-O Live Server faz **hot-reload automático** ao salvar qualquer arquivo — ideal durante o desenvolvimento.
 
 ---
 
-### ▶ Opção 3 — Servidor local simples
+### ▶ Opção 3 — Desenvolvimento sem MongoDB local
 
 ```bash
-# Clone o repositório
-git clone https://github.com/Cruzxy/BGPanalyzer.git
-cd BGPanalyzer
-
-# Python 3
-python -m http.server 8080
-# → Acesse: http://localhost:8080
-
-# Node.js (npx serve)
-npx serve .
-# → Acesse: http://localhost:3000
+npm install
+$env:FILE_DB_FALLBACK="true"
+$env:PORT="8080"
+npm start
+# Acesse: http://localhost:8080
 ```
 
-> **Nota:** Para Opção 2 e 3, a URL `file://` funciona com IndexedDB, mas algumas APIs do browser têm restrições de CORS com protocolo `file://`. Se tiver problemas com fetch, use um servidor local.
+> **Nota:** Mesmo no fallback, a interface continua usando a API. O arquivo local serve apenas como banco de desenvolvimento quando o MongoDB nao esta disponivel.
 
 ### Fluxo de Uso
 
 ```
 1. COLETOR BGP
    └─ Selecione uma operadora ou grupo regional
-   └─ Clique em "Coletar" (dados salvos em cache local)
+   └─ Clique em "Coletar" (dados salvos pela API)
 
 2. DASHBOARD
    └─ Visualize as métricas consolidadas
@@ -340,7 +318,8 @@ Endpoints:
 BGPanalyzer/
 ├── index.html          # Interface principal (SPA — Single Page Application)
 ├── style.css           # Design system — dark mode SaaS + glassmorphism
-├── db.js               # Camada de banco de dados — IndexedDB estruturado
+├── server.js           # API Node.js, MongoDB e servidor estatico da UI
+├── db.js               # Cliente REST usado pela interface
 ├── script.js           # Lógica da aplicação + 95 operadoras cadastradas
 └── README.md           # Este arquivo
 ```
@@ -348,22 +327,25 @@ BGPanalyzer/
 ### Organização do `script.js`
 
 ```javascript
-// ── db.js — IndexedDB Layer ───────────────────────────────
-BGP_DB.salvarOperadora(entry)           // Salva ASN com dados RIPE + PDB
-BGP_DB.salvarPrefixos(asn, lista)       // Salva prefixos por ASN
-BGP_DB.salvarAnalise(asn, resultado)    // Salva análise de AS-PATH
-BGP_DB.salvarMitigacao(resultado)       // Salva evento MOAS/scrubbing
-BGP_DB.listarOperadoras()              // Retorna todos os ASNs salvos
-BGP_DB.buscarPrefixosPorASN(asn)       // Query por índice de ASN
-BGP_DB.listarTodosPrefixos24()         // IDBKeyRange filtra mascara='24'
-BGP_DB.contarDesvios()                 // Count via índice desvio_suspeito
-BGP_DB.estatisticas()                  // Stats de todas as stores
+// ── db.js — REST Client para a API Node ───────────────────
+BGP_DB.salvarOperadora(entry)           // INSERT OR REPLACE INTO operadoras
+BGP_DB.salvarPrefixos(asn, lista)       // INSERT OR REPLACE INTO prefixos (batch)
+BGP_DB.salvarAnalise(asn, resultado)    // INSERT OR REPLACE INTO analises
+BGP_DB.salvarMitigacao(resultado)       // INSERT OR REPLACE INTO mitigacao
+BGP_DB.listarOperadoras()              // SELECT * FROM operadoras
+BGP_DB.buscarPrefixosPorASN(asn)       // SELECT prefixo WHERE asn = ?
+BGP_DB.listarTodosPrefixos24()         // SELECT * WHERE mascara = '24'
+BGP_DB.contarDesvios()                 // SELECT COUNT(*) WHERE desvio_suspeito = 1
+BGP_DB.estatisticas()                  // COUNT(*) de todas as tabelas
 BGP_DB.exportarJSON()                  // Snapshot completo para backup
-BGP_DB.limparColeta()                  // Limpa coleta sem apagar mitigação
+BGP_DB.exportarJSON()                  // Snapshot completo da API
+BGP_DB.transformarWarehouse()          // Dataset analitico para KDD
+BGP_DB.migrarIndexedDBLegado()         // Migra a base antiga, se existir
+BGP_DB.limparColeta()                  // DELETE FROM operadoras, prefixos, analises
 
 // ── script.js — Application Logic ────────────────────────
-dbCarregar()               // Carrega estado do IndexedDB para memória
-dbSalvarEntry()            // Persiste operadora coletada no IDB
+dbCarregar()               // Carrega estado da API para memória
+dbSalvarEntry()            // Persiste operadora coletada pela API
 iniciarColeta()            // Coleta por ASN individual
 coletarGrupo()             // Coleta por grupo regional
 analisarPrefixo()          // Análise de AS-PATH
@@ -400,10 +382,13 @@ exportarRelatorio()        // Export CSV
 - [x] Análise de AS-PATH e detecção de desvios
 - [x] Mapa de prefixos /24 com filtros
 - [x] Análise comparativa (Bar, Radar, Scatter)
-- [x] Cache local persistente (localStorage)
+- [x] Backend Node.js com API REST
+- [x] Banco persistente em MongoDB
 - [x] **Análise de Mitigação DDoS (MOAS)**
 - [x] Scan paralelo configurável com ETA
 - [x] Export CSV (relatórios e mitigação)
+- [x] **Migração do banco do browser para API Node/MongoDB**
+- [x] Tela de Base de Dados com snapshot JSON e dataset KDD
 - [ ] Análise temporal (séries históricas)
 - [ ] Clustering de comportamento de anúncios
 - [ ] Interpretabilidade de modelos (SHAP/LIME)

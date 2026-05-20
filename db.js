@@ -1,437 +1,287 @@
-// ══════════════════════════════════════════════════════════════════════════════
-//  BGP ANALYZER — IndexedDB Database Layer
-//  Substitui o cache simples de localStorage por um banco de dados estruturado
-//  com suporte a transações, índices, cursor e queries.
-//
-//  Banco: bgp_analyzer_db  |  Versão: 3
-//  Object Stores:
-//    - operadoras   : dados de ASN coletados (RIPE + PeeringDB)
-//    - prefixos     : prefixos /24 por ASN
-//    - analises     : resultados de análise de AS-PATH
-//    - mitigacao    : resultados de scan MOAS / scrubbing
-//    - eventos      : log histórico de coletas e análises
-// ══════════════════════════════════════════════════════════════════════════════
+// BGP Analyzer - browser data client
+// The browser no longer owns the database. This file keeps the old BGP_DB
+// facade, but every operation is now persisted through the Node API.
 
 var BGP_DB = (function () {
+  var API_BASE = window.BGP_API_BASE || '/api';
 
-  var DB_NAME    = 'bgp_analyzer_db';
-  var DB_VERSION = 3;
-  var db         = null;   // instância IDBDatabase
-  var _onReady   = [];     // fila de callbacks aguardando abertura
-
-  // ── Schema ────────────────────────────────────────────────────────────────
-  var STORES = {
-    operadoras: {
-      keyPath: 'asn',
-      indexes: [
-        { name: 'nome_op',    field: 'nome_op',    unique: false },
-        { name: 'tipo_rede',  field: 'tipo_rede',  unique: false },
-        { name: 'coletado_em',field: 'coletado_em',unique: false }
-      ]
-    },
-    prefixos: {
-      keyPath: 'id',        // asn + '_' + prefixo
-      indexes: [
-        { name: 'asn',      field: 'asn',      unique: false },
-        { name: 'prefixo',  field: 'prefixo',  unique: false },
-        { name: 'mascara',  field: 'mascara',  unique: false }
-      ]
-    },
-    analises: {
-      keyPath: 'asn',
-      indexes: [
-        { name: 'desvio_suspeito', field: 'desvio_suspeito', unique: false },
-        { name: 'analisado_em',    field: 'analisado_em',    unique: false }
-      ]
-    },
-    mitigacao: {
-      keyPath: 'id',        // prefixo + '_' + asn_mitigador
-      indexes: [
-        { name: 'prefixo',      field: 'prefixo',      unique: false },
-        { name: 'asn_dono',     field: 'asn_dono',     unique: false },
-        { name: 'asn_mitigador',field: 'asn_mitigador',unique: false },
-        { name: 'detectado_em', field: 'detectado_em', unique: false }
-      ]
-    },
-    eventos: {
-      keyPath:       'id',
-      autoIncrement: true,
-      indexes: [
-        { name: 'tipo',      field: 'tipo',      unique: false },
-        { name: 'asn',       field: 'asn',       unique: false },
-        { name: 'timestamp', field: 'timestamp', unique: false }
-      ]
+  function url(path, params) {
+    var finalUrl = API_BASE + path;
+    if (params) {
+      var qs = new URLSearchParams();
+      Object.keys(params).forEach(function (key) {
+        if (params[key] !== undefined && params[key] !== null && params[key] !== '') {
+          qs.set(key, params[key]);
+        }
+      });
+      var str = qs.toString();
+      if (str) finalUrl += '?' + str;
     }
-  };
+    return finalUrl;
+  }
 
-  // ── Abertura / upgrade do banco ───────────────────────────────────────────
-  function abrir() {
-    return new Promise(function (resolve, reject) {
-      if (db) { resolve(db); return; }
+  function request(path, options) {
+    options = options || {};
+    var headers = options.headers || {};
+    if (options.body && !(options.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(options.body);
+    }
+    options.headers = headers;
 
-      var req = indexedDB.open(DB_NAME, DB_VERSION);
-
-      req.onupgradeneeded = function (ev) {
-        var idb = ev.target.result;
-        var tx  = ev.target.transaction;
-
-        Object.entries(STORES).forEach(function (entry) {
-          var nome  = entry[0];
-          var conf  = entry[1];
-          var store;
-
-          if (!idb.objectStoreNames.contains(nome)) {
-            var opts = { keyPath: conf.keyPath };
-            if (conf.autoIncrement) opts.autoIncrement = true;
-            store = idb.createObjectStore(nome, opts);
-          } else {
-            store = tx.objectStore(nome);
-          }
-
-          (conf.indexes || []).forEach(function (idx) {
-            if (!store.indexNames.contains(idx.name)) {
-              store.createIndex(idx.name, idx.field, { unique: idx.unique });
-            }
-          });
+    return fetch(url(path, options.query), options).then(function (res) {
+      if (!res.ok) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          throw new Error(body.error || ('API HTTP ' + res.status));
         });
-      };
-
-      req.onsuccess = function (ev) {
-        db = ev.target.result;
-        db.onversionchange = function () { db.close(); db = null; };
-        _onReady.forEach(function (fn) { fn(db); });
-        _onReady = [];
-        resolve(db);
-      };
-
-      req.onerror = function (ev) {
-        console.error('[BGP_DB] Erro ao abrir banco:', ev.target.error);
-        reject(ev.target.error);
-      };
+      }
+      if (res.status === 204) return null;
+      return res.json();
     });
   }
 
-  // ── Helpers de transação ──────────────────────────────────────────────────
-  function tx(stores, modo, fn) {
-    return abrir().then(function (idb) {
-      return new Promise(function (resolve, reject) {
-        var t = idb.transaction(stores, modo);
-        t.onerror   = function (e) { reject(e.target.error); };
-        t.onabort   = function (e) { reject(e.target.error); };
-        t.oncomplete = function ()  { resolve(); };
-        fn(t);
-      });
-    });
+  function abrir() {
+    return request('/health');
   }
 
-  function get(store, key) {
-    return abrir().then(function (idb) {
-      return new Promise(function (resolve, reject) {
-        var req = idb.transaction(store, 'readonly').objectStore(store).get(key);
-        req.onsuccess = function () { resolve(req.result || null); };
-        req.onerror   = function (e) { reject(e.target.error); };
-      });
-    });
-  }
-
-  function getAll(store, indexName, value) {
-    return abrir().then(function (idb) {
-      return new Promise(function (resolve, reject) {
-        var os  = idb.transaction(store, 'readonly').objectStore(store);
-        var req = indexName ? os.index(indexName).getAll(value) : os.getAll();
-        req.onsuccess = function () { resolve(req.result || []); };
-        req.onerror   = function (e) { reject(e.target.error); };
-      });
-    });
-  }
-
-  function put(store, obj) {
-    return abrir().then(function (idb) {
-      return new Promise(function (resolve, reject) {
-        var req = idb.transaction(store, 'readwrite').objectStore(store).put(obj);
-        req.onsuccess = function () { resolve(req.result); };
-        req.onerror   = function (e) { reject(e.target.error); };
-      });
-    });
-  }
-
-  function del(store, key) {
-    return abrir().then(function (idb) {
-      return new Promise(function (resolve, reject) {
-        var req = idb.transaction(store, 'readwrite').objectStore(store).delete(key);
-        req.onsuccess = function () { resolve(); };
-        req.onerror   = function (e) { reject(e.target.error); };
-      });
-    });
-  }
-
-  function clear(store) {
-    return abrir().then(function (idb) {
-      return new Promise(function (resolve, reject) {
-        var req = idb.transaction(store, 'readwrite').objectStore(store).clear();
-        req.onsuccess = function () { resolve(); };
-        req.onerror   = function (e) { reject(e.target.error); };
-      });
-    });
-  }
-
-  function count(store) {
-    return abrir().then(function (idb) {
-      return new Promise(function (resolve, reject) {
-        var req = idb.transaction(store, 'readonly').objectStore(store).count();
-        req.onsuccess = function () { resolve(req.result); };
-        req.onerror   = function (e) { reject(e.target.error); };
-      });
-    });
-  }
-
-  // ── API Pública ───────────────────────────────────────────────────────────
-
-  // --- Operadoras -----------------------------------------------------------
   function salvarOperadora(entry) {
-    entry.coletado_em = new Date().toISOString();
-    return put('operadoras', entry);
+    entry.coletado_em = entry.coletado_em || new Date().toISOString();
+    return request('/operadoras', { method: 'POST', body: entry });
   }
 
   function buscarOperadora(asn) {
-    return get('operadoras', String(asn));
+    return request('/operadoras/' + encodeURIComponent(String(asn))).catch(function (e) {
+      if (String(e.message).includes('404')) return null;
+      throw e;
+    });
   }
 
   function listarOperadoras() {
-    return getAll('operadoras');
+    return request('/operadoras');
   }
 
   function contarOperadoras() {
-    return count('operadoras');
+    return estatisticas().then(function (stats) { return stats.operadoras || 0; });
   }
 
-  // --- Prefixos /24 ---------------------------------------------------------
   function salvarPrefixos(asn, listaPrefixos) {
-    return abrir().then(function (idb) {
-      return new Promise(function (resolve, reject) {
-        var t   = idb.transaction('prefixos', 'readwrite');
-        var os  = t.objectStore('prefixos');
-        var ts  = new Date().toISOString();
-
-        t.oncomplete = function () { resolve(); };
-        t.onerror    = function (e) { reject(e.target.error); };
-
-        listaPrefixos.forEach(function (prefixo) {
-          var mascara = prefixo.split('/')[1] || '?';
-          os.put({
-            id:         String(asn) + '_' + prefixo,
-            asn:        String(asn),
-            prefixo:    prefixo,
-            mascara:    mascara,
-            salvo_em:   ts
-          });
-        });
-      });
+    return request('/prefixos/' + encodeURIComponent(String(asn)), {
+      method: 'POST',
+      body: { prefixos: listaPrefixos || [] }
     });
   }
 
   function buscarPrefixosPorASN(asn) {
-    return getAll('prefixos', 'asn', String(asn)).then(function (rows) {
+    return request('/prefixos', { query: { asn: asn } }).then(function (rows) {
       return rows.map(function (r) { return r.prefixo; });
     });
   }
 
+  function listarPrefixos() {
+    return request('/prefixos');
+  }
+
   function listarTodosPrefixos24() {
-    return getAll('prefixos', 'mascara', '24');
+    return request('/prefixos', { query: { mascara: '24' } });
   }
 
   function contarPrefixos24() {
-    return abrir().then(function (idb) {
-      return new Promise(function (resolve, reject) {
-        var req = idb.transaction('prefixos', 'readonly')
-          .objectStore('prefixos')
-          .index('mascara')
-          .count('24');
-        req.onsuccess = function () { resolve(req.result); };
-        req.onerror   = function (e) { reject(e.target.error); };
-      });
-    });
+    return estatisticas().then(function (stats) { return stats.prefixos24 || 0; });
   }
 
-  // --- Análises AS-PATH -----------------------------------------------------
   function salvarAnalise(asn, resultado) {
-    resultado.asn        = String(asn);
-    resultado.analisado_em = new Date().toISOString();
-    return put('analises', resultado);
+    resultado = resultado || {};
+    resultado.analisado_em = resultado.analisado_em || new Date().toISOString();
+    return request('/analises/' + encodeURIComponent(String(asn)), {
+      method: 'POST',
+      body: resultado
+    });
   }
 
   function buscarAnalise(asn) {
-    return get('analises', String(asn));
+    return request('/analises/' + encodeURIComponent(String(asn))).catch(function (e) {
+      if (String(e.message).includes('404')) return null;
+      throw e;
+    });
   }
 
   function listarAnalises() {
-    return getAll('analises');
+    return request('/analises');
   }
 
   function contarDesvios() {
-    return abrir().then(function (idb) {
-      return new Promise(function (resolve, reject) {
-        var req = idb.transaction('analises', 'readonly')
-          .objectStore('analises')
-          .index('desvio_suspeito')
-          .count(1);
-        req.onsuccess = function () { resolve(req.result); };
-        req.onerror   = function (e) { reject(e.target.error); };
-      });
+    return listarAnalises().then(function (rows) {
+      return rows.filter(function (r) { return !!r.desvio_suspeito; }).length;
     });
   }
 
-  // --- Mitigação / MOAS -----------------------------------------------------
   function salvarMitigacao(resultado) {
-    // resultado: { prefixo, asn_dono, nome_dono, mitigadores[], redundante, n_upstreams }
-    var ts = new Date().toISOString();
-    var ops = [];
-    resultado.mitigadores.forEach(function (asnMit) {
-      ops.push(put('mitigacao', {
-        id:            resultado.prefixo + '_' + asnMit,
-        prefixo:       resultado.prefixo,
-        asn_dono:      String(resultado.asn_dono),
-        nome_dono:     resultado.nome_dono,
-        asn_mitigador: String(asnMit),
-        redundante:    resultado.redundante,
-        n_upstreams:   resultado.n_upstreams,
-        origens:       resultado.origens,
-        detectado_em:  ts
-      }));
-    });
-    return Promise.all(ops);
+    return request('/mitigacao', { method: 'POST', body: resultado || {} });
   }
 
   function listarMitigacoes() {
-    return getAll('mitigacao');
+    return request('/mitigacao');
   }
 
   function buscarMitigacoesPorPrefixo(prefixo) {
-    return getAll('mitigacao', 'prefixo', prefixo);
+    return request('/mitigacao', { query: { prefixo: prefixo } });
   }
 
   function buscarMitigacoesPorMitigador(asnMit) {
-    return getAll('mitigacao', 'asn_mitigador', String(asnMit));
+    return request('/mitigacao', { query: { asn_mitigador: asnMit } });
   }
 
-  // --- Eventos / Log Histórico ----------------------------------------------
   function registrarEvento(tipo, asn, detalhes) {
-    return put('eventos', {
-      tipo:       tipo,
-      asn:        String(asn || ''),
-      detalhes:   detalhes || {},
-      timestamp:  new Date().toISOString()
+    return request('/eventos', {
+      method: 'POST',
+      body: { tipo: tipo, asn: asn, detalhes: detalhes || {} }
     });
   }
 
   function listarEventos(limite) {
-    return getAll('eventos').then(function (todos) {
-      todos.sort(function (a, b) { return b.id - a.id; });
-      return limite ? todos.slice(0, limite) : todos;
-    });
+    return request('/eventos', { query: { limite: limite || 50 } });
   }
 
-  // --- Utilitários gerais ---------------------------------------------------
   function limparTudo() {
-    var stores = Object.keys(STORES);
-    return Promise.all(stores.map(clear));
+    return request('/database', { method: 'DELETE' });
   }
 
   function limparColeta() {
-    return Promise.all([
-      clear('operadoras'),
-      clear('prefixos'),
-      clear('analises')
-    ]);
+    return request('/database/coleta', { method: 'DELETE' });
   }
 
   function limparMitigacao() {
-    return clear('mitigacao');
+    return request('/database/mitigacao', { method: 'DELETE' });
   }
 
   function estatisticas() {
-    return Promise.all([
-      count('operadoras'),
-      count('prefixos'),
-      contarPrefixos24(),
-      count('analises'),
-      count('mitigacao'),
-      count('eventos')
-    ]).then(function (res) {
-      return {
-        operadoras: res[0],
-        prefixos:   res[1],
-        prefixos24: res[2],
-        analises:   res[3],
-        mitigacao:  res[4],
-        eventos:    res[5]
-      };
-    });
+    return request('/stats');
   }
 
-  // Exportar snapshot completo como JSON (para backup / auditoria)
   function exportarJSON() {
-    return Promise.all([
-      listarOperadoras(),
-      listarTodosPrefixos24(),
-      listarAnalises(),
-      listarMitigacoes(),
-      listarEventos(200)
-    ]).then(function (res) {
-      return {
-        versao:    DB_VERSION,
-        exportado_em: new Date().toISOString(),
-        operadoras: res[0],
-        prefixos:   res[1],
-        analises:   res[2],
-        mitigacao:  res[3],
-        eventos:    res[4]
+    return request('/export/json');
+  }
+
+  function transformarWarehouse() {
+    return request('/export/warehouse');
+  }
+
+  function importarJSON(snapshot, opts) {
+    opts = opts || {};
+    return request('/import/json', {
+      method: 'POST',
+      query: { limparAntes: opts.limparAntes !== false },
+      body: snapshot
+    });
+  }
+
+  function migrarIndexedDBLegado() {
+    if (typeof indexedDB === 'undefined') {
+      return Promise.resolve({ migrado: false, motivo: 'IndexedDB indisponivel neste navegador.' });
+    }
+    return lerIndexedDBLegado().then(function (snapshot) {
+      var total = snapshot.operadoras.length + snapshot.prefixos.length +
+        snapshot.analises.length + snapshot.mitigacao.length + snapshot.eventos.length;
+      if (!total) return { migrado: false, motivo: 'Nenhum dado legado encontrado.', total: 0 };
+      return importarJSON(snapshot, { limparAntes: false }).then(function () {
+        return {
+          migrado: true,
+          total: total,
+          operadoras: snapshot.operadoras.length,
+          prefixos: snapshot.prefixos.length,
+          analises: snapshot.analises.length,
+          mitigacao: snapshot.mitigacao.length,
+          eventos: snapshot.eventos.length
+        };
+      });
+    });
+  }
+
+  function lerIndexedDBLegado() {
+    return new Promise(function (resolve) {
+      var vazio = {
+        formato: 'bgp-analyzer-browser-legacy',
+        operadoras: [],
+        prefixos: [],
+        analises: [],
+        mitigacao: [],
+        eventos: []
+      };
+      var req;
+      try {
+        req = indexedDB.open('bgp_analyzer_db');
+      } catch (e) {
+        resolve(vazio);
+        return;
+      }
+      req.onerror = function () { resolve(vazio); };
+      req.onsuccess = function (ev) {
+        var db = ev.target.result;
+        var stores = Object.keys(vazio).filter(function (name) {
+          return name !== 'formato' && db.objectStoreNames.contains(name);
+        });
+        if (!stores.length) {
+          db.close();
+          resolve(vazio);
+          return;
+        }
+        Promise.all(stores.map(function (storeName) {
+          return getAll(db, storeName).then(function (rows) { vazio[storeName] = rows; });
+        })).then(function () {
+          db.close();
+          resolve(vazio);
+        }).catch(function () {
+          db.close();
+          resolve(vazio);
+        });
       };
     });
   }
 
-  // ── Inicialização (pré-aquece a conexão) ──────────────────────────────────
+  function getAll(db, storeName) {
+    return new Promise(function (resolve) {
+      try {
+        var req = db.transaction(storeName, 'readonly').objectStore(storeName).getAll();
+        req.onsuccess = function () { resolve(req.result || []); };
+        req.onerror = function () { resolve([]); };
+      } catch (e) {
+        resolve([]);
+      }
+    });
+  }
+
   abrir().catch(function (e) {
-    console.error('[BGP_DB] Falha na inicialização do IndexedDB:', e);
+    console.error('[BGP_DB] API indisponivel:', e);
   });
 
-  // ── Interface pública ─────────────────────────────────────────────────────
   return {
-    // Operadoras
-    salvarOperadora:         salvarOperadora,
-    buscarOperadora:         buscarOperadora,
-    listarOperadoras:        listarOperadoras,
-    contarOperadoras:        contarOperadoras,
-
-    // Prefixos
-    salvarPrefixos:          salvarPrefixos,
-    buscarPrefixosPorASN:    buscarPrefixosPorASN,
-    listarTodosPrefixos24:   listarTodosPrefixos24,
-    contarPrefixos24:        contarPrefixos24,
-
-    // Análises
-    salvarAnalise:           salvarAnalise,
-    buscarAnalise:           buscarAnalise,
-    listarAnalises:          listarAnalises,
-    contarDesvios:           contarDesvios,
-
-    // Mitigação
-    salvarMitigacao:         salvarMitigacao,
-    listarMitigacoes:        listarMitigacoes,
-    buscarMitigacoesPorPrefixo:   buscarMitigacoesPorPrefixo,
+    salvarOperadora: salvarOperadora,
+    buscarOperadora: buscarOperadora,
+    listarOperadoras: listarOperadoras,
+    contarOperadoras: contarOperadoras,
+    salvarPrefixos: salvarPrefixos,
+    buscarPrefixosPorASN: buscarPrefixosPorASN,
+    listarPrefixos: listarPrefixos,
+    listarTodosPrefixos24: listarTodosPrefixos24,
+    contarPrefixos24: contarPrefixos24,
+    salvarAnalise: salvarAnalise,
+    buscarAnalise: buscarAnalise,
+    listarAnalises: listarAnalises,
+    contarDesvios: contarDesvios,
+    salvarMitigacao: salvarMitigacao,
+    listarMitigacoes: listarMitigacoes,
+    buscarMitigacoesPorPrefixo: buscarMitigacoesPorPrefixo,
     buscarMitigacoesPorMitigador: buscarMitigacoesPorMitigador,
-
-    // Eventos
-    registrarEvento:         registrarEvento,
-    listarEventos:           listarEventos,
-
-    // Utilitários
-    limparTudo:              limparTudo,
-    limparColeta:            limparColeta,
-    limparMitigacao:         limparMitigacao,
-    estatisticas:            estatisticas,
-    exportarJSON:            exportarJSON,
-    abrir:                   abrir   // acesso à conexão bruta (emergência)
+    registrarEvento: registrarEvento,
+    listarEventos: listarEventos,
+    limparTudo: limparTudo,
+    limparColeta: limparColeta,
+    limparMitigacao: limparMitigacao,
+    estatisticas: estatisticas,
+    exportarJSON: exportarJSON,
+    importarJSON: importarJSON,
+    transformarWarehouse: transformarWarehouse,
+    migrarIndexedDBLegado: migrarIndexedDBLegado,
+    abrir: abrir
   };
-
 })();

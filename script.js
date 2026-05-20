@@ -228,19 +228,19 @@ const GRUPOS_OPERADORAS = {
 };
 
 // ══════════════════════════════════════════════
-//  STATE — cache em memória (populado do IndexedDB no boot)
+//  STATE — cache em memoria (populado pela API Node)
 // ══════════════════════════════════════════════
 let state = { collected: {}, prefixos24: {}, analises: {}, coletando: false };
 let chartPrefixos = null, chartDist = null, chartPaths = null,
     chartComp1 = null, chartRadar = null, chartScatter = null;
 
-Chart.defaults.color = '#64748b';
-Chart.defaults.borderColor = 'rgba(148,163,184,0.15)';
-Chart.defaults.font.family = "'IBM Plex Mono', monospace";
+Chart.defaults.color = '#526071';
+Chart.defaults.borderColor = 'rgba(123,136,152,0.16)';
+Chart.defaults.font.family = "'JetBrains Mono', monospace";
 Chart.defaults.font.size = 11;
 
 // ══════════════════════════════════════════════
-//  BANCO DE DADOS — IndexedDB via BGP_DB
+//  BANCO DE DADOS — API Node + MongoDB (BGP_DB)
 //  (db.js deve ser carregado antes de script.js)
 // ══════════════════════════════════════════════
 
@@ -262,16 +262,16 @@ function dbAtualizarUI() {
     if (!existing) {
       var row = document.createElement('div');
       row.className = 'si-row'; row.id = 'db-sync-row';
-      row.innerHTML = '<span class="si-label">IndexedDB</span>' +
+      row.innerHTML = '<span class="si-label">API</span>' +
         '<span class="si-val" id="db-sync-ts"></span>';
       si.appendChild(row);
     }
     var tsEl = document.getElementById('db-sync-ts');
-    if (tsEl) tsEl.textContent = stats.operadoras + 'op · ' + stats.prefixos24 + '/24';
+    if (tsEl) tsEl.textContent = stats.operadoras + ' op | ' + stats.prefixos24 + ' /24';
   });
 }
 
-// Salva uma entry de operadora completa no IndexedDB
+// Salva uma entry de operadora completa na API
 async function dbSalvarEntry(asn, entry, pf24, analise) {
   try {
     await BGP_DB.salvarOperadora(entry);
@@ -286,7 +286,7 @@ async function dbSalvarEntry(asn, entry, pf24, analise) {
   } catch (e) { console.warn('[BGP_DB] Erro ao salvar entry:', e); }
 }
 
-// Carrega todo o estado do IndexedDB para memória
+// Carrega todo o estado da API para memoria
 async function dbCarregar() {
   try {
     var ops      = await BGP_DB.listarOperadoras();
@@ -327,8 +327,8 @@ async function dbCarregar() {
 
 // Limpa tudo: banco + estado em memória
 function limparDB() {
-  if (!confirm('Limpar todos os dados no banco IndexedDB?')) return;
-  BGP_DB.limparColeta().then(function () {
+  if (!confirm('Limpar todos os dados da API?')) return;
+  BGP_DB.limparTudo().then(function () {
     state.collected  = {};
     state.prefixos24 = {};
     state.analises   = {};
@@ -343,7 +343,7 @@ function limparDB() {
     var trel = document.getElementById('tabela-relatorio');
     if (trel) trel.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">▤</div>' +
       '<div class="empty-text">Banco limpo.</div></div></td></tr>';
-    log('log-terminal', '✓ IndexedDB limpo — todos os dados removidos.', 'ok');
+    log('log-terminal', 'OK API limpa — todos os dados removidos.', 'ok');
   }).catch(function (e) {
     console.error('[BGP_DB] Erro ao limpar:', e);
     log('log-terminal', '✗ Erro ao limpar banco: ' + e, 'warn');
@@ -355,18 +355,24 @@ function limparDB() {
 // ══════════════════════════════════════════════
 function navigate(el, page) {
   if (!page) return;
+  var pageEl = document.getElementById('page-' + page);
+  if (!pageEl) return;
+  var navEl = el || document.querySelector('.nav-item[data-page="' + page + '"]');
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('page-' + page).classList.add('active');
+  pageEl.classList.add('active');
   document.getElementById('page-title').textContent = {
     dashboard: 'Dashboard', coletor: 'Coletor BGP', analisador: 'Analisador',
-    prefixos: 'Prefixos /24', relatorio: 'Relatorio', comparativo: 'Comparativo'
+    prefixos: 'Prefixos /24', relatorio: 'Relatorio', dados: 'Base de Dados',
+    comparativo: 'Comparativo', mitigacao: 'Mitigacao DDoS'
   }[page];
-  el.closest('.nav-item')?.classList.add('active');
+  if (navEl && navEl.closest) navEl.closest('.nav-item')?.classList.add('active');
   if (page === 'dashboard') atualizarDashboard();
   if (page === 'relatorio') gerarRelatorio();
+  if (page === 'dados') renderDados();
   if (page === 'comparativo') renderComparativo();
   if (page === 'prefixos') filtrarPrefixos();
+  if (page === 'mitigacao') iniciarPaginaMitigacao();
 }
 
 // ══════════════════════════════════════════════
@@ -374,13 +380,14 @@ function navigate(el, page) {
 // ══════════════════════════════════════════════
 function log(termId, msg, type) {
   type = type || 'info';
+  if (!['ok', 'err', 'warn', 'info', 'data', 'hi'].includes(type)) type = 'info';
   var t = document.getElementById(termId);
   if (!t) return;
   var now = new Date();
   var ts = String(now.getMinutes()).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0');
   var line = document.createElement('div');
   line.className = 'log-line';
-  line.innerHTML = '<span class="log-ts">' + ts + '</span><span class="log-' + type + '">' + msg + '</span>';
+  line.innerHTML = '<span class="log-ts">' + ts + '</span><span class="log-' + type + '">' + escapeHTML(msg) + '</span>';
   t.appendChild(line);
   t.scrollTop = t.scrollHeight;
 }
@@ -600,7 +607,7 @@ async function iniciarMitigacaoScan() {
       // Só registra prefixos onde outro ASN aparece como origem (MOAS real)
       if (res.mitigadores.length > 0) {
         mitResultados.push(res);
-        // Persistir no IndexedDB
+        // Persistir na API
         BGP_DB.salvarMitigacao(res).catch(function(e) {
           console.warn('[BGP_DB] Erro ao salvar mitigacao:', e);
         });
@@ -625,7 +632,7 @@ async function iniciarMitigacaoScan() {
           return SCRUBBING_PROVIDERS[a] ? SCRUBBING_PROVIDERS[a].nome : 'AS' + a;
         }).join(', ');
         log(logId,
-          '⚠ MOAS: ' + res.prefixo + ' (' + res.nome_dono + ')' +
+          'ALERTA MOAS: ' + res.prefixo + ' (' + res.nome_dono + ')' +
           ' → mitigado por: ' + mitNomes +
           ' | redundancia: ' + (res.redundante ? 'SIM (' + res.n_upstreams + ' paths)' : 'NAO'),
           'warn');
@@ -879,7 +886,7 @@ function renderTabelaRedundancia() {
       '<td style="text-align:center"><span class="badge ' + (v.sem_red ? 'badge-warn' : 'badge-ok') + '">' + v.sem_red + '</span></td>' +
       '<td style="text-align:center"><span class="badge ' +
         (v.sem_red > 0 ? 'badge-danger' : 'badge-ok') + '">' +
-        (v.sem_red > 0 ? '⚠ Risco' : '✓ OK') + '</span></td>' +
+        (v.sem_red > 0 ? 'Risco' : 'OK') + '</span></td>' +
       '<td style="min-width:110px"><div style="display:flex;align-items:center;gap:6px">' +
         '<div style="height:6px;background:var(--surface3);border-radius:3px;flex:1;overflow:hidden">' +
         '<div style="height:100%;width:' + scoreRed + '%;background:' + sc + ';border-radius:3px"></div></div>' +
@@ -918,11 +925,19 @@ function exportarMitigacao() {
 function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
 function downloadCSV(csv, filename) {
-  var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), filename);
+}
+
+function downloadJSON(data, filename) {
+  downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8;' }), filename);
+}
+
+function downloadBlob(blob, filename) {
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 500);
 }
 
 // ══════════════════════════════════════════════
@@ -999,12 +1014,12 @@ async function coletarASN(asn, nome, logId) {
   var prefixos = (pfData && pfData.data && pfData.data.prefixes)
     ? pfData.data.prefixes.map(function(p) { return p.prefix; }).filter(function(p) { return !p.includes(':'); })
     : [];
-  log(logId, '✓ ' + prefixos.length + ' prefixos IPv4', 'ok');
+  log(logId, 'OK ' + prefixos.length + ' prefixos IPv4', 'ok');
 
   log(logId, '-> GET as-overview AS' + asn, 'data');
   var asInfo = await fetchRIPE('as-overview/data.json?resource=AS' + asn);
   var holder = (asInfo && asInfo.data) ? asInfo.data.holder : nome;
-  log(logId, '✓ Holder: ' + holder, 'ok');
+  log(logId, 'OK Holder: ' + holder, 'ok');
 
   log(logId, '-> GET peeringdb.com/api/net?asn=' + asn, 'data');
   var pdbNetType = 'N/A', pdbPolicy = 'N/A', pdbWebsite = '--';
@@ -1019,10 +1034,10 @@ async function coletarASN(asn, nome, logId) {
       }
     }
   } catch(e) {}
-  log(logId, '✓ Tipo: ' + pdbNetType + ' | Peering: ' + pdbPolicy, 'ok');
+  log(logId, 'OK Tipo: ' + pdbNetType + ' | Peering: ' + pdbPolicy, 'ok');
 
   var pf24 = filtrar24(prefixos);
-  log(logId, '✓ Prefixos /24: ' + pf24.length, 'hi');
+  log(logId, 'OK Prefixos /24: ' + pf24.length, 'hi');
 
   var entry = {
     nome_op: nome, asn: asn, tipo_rede: pdbNetType, prefixos: prefixos,
@@ -1051,11 +1066,11 @@ async function coletarASN(asn, nome, logId) {
     }
     state.analises[asn] = detectarDesvio(caminhos);
     var a = state.analises[asn];
-    log(logId, '✓ AS-PATH: media ' + a.media_saltos + ' saltos | ' + a.paths_unicos + ' unicos', 'ok');
-    if (a.desvio_suspeito) log(logId, '⚠ Desvio suspeito detectado!', 'warn');
+    log(logId, 'OK AS-PATH: media ' + a.media_saltos + ' saltos | ' + a.paths_unicos + ' unicos', 'ok');
+    if (a.desvio_suspeito) log(logId, 'Desvio suspeito detectado!', 'warn');
   }
 
-  // Persistir no IndexedDB
+  // Persistir na API
   await dbSalvarEntry(asn, entry, pf24, state.analises[asn] || null);
 
   // UI coletor
@@ -1108,7 +1123,7 @@ async function coletarTodos() {
     await coletarASN(lista[i][1], lista[i][0], 'log-terminal');
     await sleep(200);
   }
-  log('log-terminal', '✓ Concluido — ' + lista.length + ' operadoras.', 'ok');
+  log('log-terminal', 'OK Concluido — ' + lista.length + ' operadoras.', 'ok');
   atualizarDashboard(); popularSelectFiltro();
   state.coletando = false;
   if (btn) btn.disabled = false;
@@ -1126,7 +1141,7 @@ async function coletarGrupo(grupo) {
     await coletarASN(asn, nomes[i], 'log-terminal');
     await sleep(200);
   }
-  log('log-terminal', '✓ Grupo concluido.', 'ok');
+  log('log-terminal', 'OK Grupo concluido.', 'ok');
   atualizarDashboard(); popularSelectFiltro();
   state.coletando = false;
 }
@@ -1150,16 +1165,16 @@ async function analisarPrefixo() {
       });
     });
   }
-  log('log-analise', '✓ ' + caminhos.length + ' paths de ' + new Set(caminhos.map(function(c){ return c.rrc; })).size + ' RRCs', 'ok');
+  log('log-analise', 'OK ' + caminhos.length + ' paths de ' + new Set(caminhos.map(function(c){ return c.rrc; })).size + ' RRCs', 'ok');
   var analise = detectarDesvio(caminhos);
-  log('log-analise', '✓ Media saltos: ' + analise.media_saltos + ' | Paths unicos: ' + analise.paths_unicos, 'ok');
-  if (analise.desvio_suspeito) { log('log-analise','⚠ DESVIO DETECTADO','warn'); }
-  else { log('log-analise','✓ Sem desvio significativo','ok'); }
+  log('log-analise', 'OK Media saltos: ' + analise.media_saltos + ' | Paths unicos: ' + analise.paths_unicos, 'ok');
+  if (analise.desvio_suspeito) { log('log-analise','DESVIO DETECTADO','warn'); }
+  else { log('log-analise','Sem desvio significativo','ok'); }
 
   document.getElementById('analise-resultado').style.display = '';
   document.getElementById('an-desvio').innerHTML = analise.desvio_suspeito
-    ? '<span class="badge badge-danger" style="font-size:15px">⚠ Sim</span>'
-    : '<span class="badge badge-ok" style="font-size:15px">✓ Nao</span>';
+    ? '<span class="badge badge-danger" style="font-size:15px">Sim</span>'
+    : '<span class="badge badge-ok" style="font-size:15px">Nao</span>';
   document.getElementById('an-saltos').textContent = analise.media_saltos;
   document.getElementById('an-unique').textContent = analise.paths_unicos;
   document.getElementById('an-total').textContent  = analise.total_paths;
@@ -1176,8 +1191,8 @@ async function analisarPrefixo() {
   var vals = lbls.map(function(l){return comp[l];});
   if (chartPaths) chartPaths.destroy();
   chartPaths = new Chart(document.getElementById('chartPaths'), {
-    type:'bar', data:{ labels:lbls.map(function(l){return l+' saltos';}), datasets:[{label:'Paths',data:vals,backgroundColor:'#4f46e520',borderColor:'#4f46e5',borderWidth:1.5,borderRadius:5}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(148,163,184,0.12)'}},x:{grid:{display:false}}}}
+    type:'bar', data:{ labels:lbls.map(function(l){return l+' saltos';}), datasets:[{label:'Paths',data:vals,backgroundColor:'#375dfb22',borderColor:'#375dfb',borderWidth:1.5,borderRadius:6}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(123,136,152,0.12)'}},x:{grid:{display:false}}}}
   });
 
   var pd = document.getElementById('path-display'); pd.innerHTML='';
@@ -1191,7 +1206,7 @@ async function analisarPrefixo() {
 
 function analisarDoPrefixo(pref) {
   document.getElementById('inp-prefixo').value = pref;
-  var navEl = document.querySelector('.nav-item[onclick*="analisador"]');
+  var navEl = document.querySelector('.nav-item[data-page="analisador"]');
   if (navEl) navigate(navEl, 'analisador');
   setTimeout(analisarPrefixo, 200);
 }
@@ -1217,7 +1232,7 @@ function atualizarDashboard() {
     sl.innerHTML = '<div class="empty"><div class="empty-icon">◌</div><div class="empty-text">Execute a coleta para visualizar dados<br><span style="opacity:0.6">→ Acesse o Coletor BGP</span></div></div>';
     return;
   }
-  var pal = ['#4f46e5','#2563eb','#7c3aed','#0891b2','#059669','#dc2626','#d97706','#16a34a','#be185d','#ea580c'];
+  var pal = ['#375dfb','#ffb454','#6e56cf','#d92d52','#2563eb','#64748b','#c73868','#b86b00','#5ea1ff','#111827'];
   sl.innerHTML = '<div class="table-wrap" style="border:none;border-radius:0"><table>' +
     '<thead><tr><th>Operadora</th><th>ASN</th><th>Prefixos</th><th>/24</th><th>Desvio</th><th>Med. Saltos</th><th>Tipo</th></tr></thead>' +
     '<tbody>' + keys.map(function(asn){
@@ -1226,7 +1241,7 @@ function atualizarDashboard() {
         '<td><code style="font-family:var(--mono);font-size:11px;color:var(--text3)">AS'+asn+'</code></td>'+
         '<td class="td-accent">'+d.prefixos.length+'</td>'+
         '<td><span class="badge badge-accent">'+p24+'</span></td>'+
-        '<td>'+(a?(a.desvio_suspeito?'<span class="badge badge-danger">⚠ Sim</span>':'<span class="badge badge-ok">✓ Nao</span>'):'<span class="badge badge-neutral">--</span>')+'</td>'+
+        '<td>'+(a?(a.desvio_suspeito?'<span class="badge badge-danger">Sim</span>':'<span class="badge badge-ok">Nao</span>'):'<span class="badge badge-neutral">--</span>')+'</td>'+
         '<td>'+(a?a.media_saltos:'--')+'</td>'+
         '<td><span class="badge badge-blue">'+d.tipo_rede+'</span></td></tr>';
     }).join('') + '</tbody></table></div>';
@@ -1243,7 +1258,7 @@ function atualizarDashboard() {
       {label:'Prefixos /24',data:p24s,backgroundColor:palArr.map(function(c){return c+'60';}),borderColor:palArr,borderWidth:1.5,borderRadius:6}
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{padding:16,usePointStyle:true,pointStyle:'rect'}}},
-      scales:{y:{beginAtZero:true,grid:{color:'rgba(99,140,200,0.07)'}},x:{grid:{display:false}}}}
+      scales:{y:{beginAtZero:true,grid:{color:'rgba(123,136,152,0.10)'}},x:{grid:{display:false}}}}
   });
   if(chartDist) chartDist.destroy();
   chartDist = new Chart(document.getElementById('chartDist'),{type:'doughnut',
@@ -1313,7 +1328,7 @@ function gerarRelatorio() {
     tr.innerHTML='<td class="td-name">'+d.nome_op+'</td><td>AS'+asn+'</td><td class="td-accent">'+d.prefixos.length+'</td><td>'+p24+'</td><td>'+pct+'%</td>'+
       '<td>'+(Object.keys(d.regioes)[0]||'--')+'</td>'+
       '<td><span class="badge badge-blue">'+d.tipo_rede+'</span></td>'+
-      '<td>'+(a?(a.desvio_suspeito?'<span class="badge badge-danger">⚠ Sim</span>':'<span class="badge badge-ok">✓ Nao</span>'):'<span class="badge badge-neutral">--</span>')+'</td>'+
+      '<td>'+(a?(a.desvio_suspeito?'<span class="badge badge-danger">Sim</span>':'<span class="badge badge-ok">Nao</span>'):'<span class="badge badge-neutral">--</span>')+'</td>'+
       '<td>'+(a?a.media_saltos:'--')+'</td>';
     tbody.appendChild(tr);
   });
@@ -1329,6 +1344,151 @@ function exportarRelatorio() {
     csv+=d.nome_op+',AS'+asn+','+d.prefixos.length+','+p24+','+pct+'%,'+(Object.keys(d.regioes)[0]||'--')+','+d.tipo_rede+','+(a?a.desvio_suspeito:'--')+','+(a?a.media_saltos:'--')+'\n';
   });
   downloadCSV(csv,'relatorio_bgp.csv');
+}
+
+// ══════════════════════════════════════════════
+//  BASE DE DADOS / API DE TRANSFORMACAO
+// ══════════════════════════════════════════════
+function renderDados() {
+  if (typeof BGP_DB === 'undefined') return;
+
+  Promise.all([
+    BGP_DB.estatisticas(),
+    BGP_DB.transformarWarehouse(),
+    BGP_DB.listarEventos(8)
+  ]).then(function (res) {
+    var stats = res[0];
+    var warehouse = res[1];
+    var eventos = res[2];
+    var registros = stats.operadoras + stats.prefixos + stats.analises + stats.mitigacao + stats.eventos;
+
+    setText('dados-engine', stats.engine || 'API');
+    setText('dados-schema', stats.schema || 'api-v1');
+    setText('dados-size', stats.tamanho_legivel || '0 B');
+    setText('dados-registros', registros);
+
+    var status = document.getElementById('dados-status');
+    if (status) {
+      status.innerHTML =
+        '<div class="data-status-grid">' +
+        dataMetric('Operadoras', stats.operadoras) +
+        dataMetric('Prefixos', stats.prefixos) +
+        dataMetric('/24', stats.prefixos24) +
+        dataMetric('Analises', stats.analises) +
+        dataMetric('MOAS', stats.mitigacao) +
+        dataMetric('Eventos', stats.eventos) +
+        '</div>' +
+        '<div class="data-foot">Atualizado: ' + escapeHTML(stats.atualizado_em || 'sem alteracoes') + '</div>';
+    }
+
+    renderWarehousePreview(warehouse);
+    renderEventosBanco(eventos);
+  }).catch(function (e) {
+    console.warn('[BGP_DB] Falha ao renderizar tela de dados:', e);
+  });
+}
+
+function dataMetric(label, value) {
+  return '<div class="data-metric"><span>' + escapeHTML(label) + '</span><strong>' + escapeHTML(value) + '</strong></div>';
+}
+
+function renderWarehousePreview(warehouse) {
+  var tbody = document.getElementById('dados-warehouse-preview');
+  if (!tbody) return;
+  var rows = (warehouse.operadoras || []).slice().sort(function (a, b) {
+    return b.score_risco - a.score_risco;
+  }).slice(0, 8);
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty"><div class="empty-icon">--</div><div class="empty-text">Colete dados para gerar o dataset KDD</div></div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(function (r) {
+    var badge = r.score_risco >= 70 ? 'badge-danger' : r.score_risco >= 40 ? 'badge-warn' : 'badge-ok';
+    return '<tr>' +
+      '<td class="td-name">' + escapeHTML(r.nome) + '</td>' +
+      '<td class="td-mono">AS' + escapeHTML(r.asn) + '</td>' +
+      '<td><span class="badge badge-accent">' + escapeHTML(r.total_24) + '</span></td>' +
+      '<td><span class="badge ' + (r.moas_detectados ? 'badge-danger' : 'badge-neutral') + '">' + escapeHTML(r.moas_detectados) + '</span></td>' +
+      '<td><span class="badge ' + badge + '">' + escapeHTML(r.score_risco) + '</span></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function renderEventosBanco(eventos) {
+  var el = document.getElementById('dados-eventos');
+  if (!el) return;
+  if (!eventos || !eventos.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">--</div><div class="empty-text">Nenhum evento registrado</div></div>';
+    return;
+  }
+  el.innerHTML = '<div class="event-list">' + eventos.map(function (ev) {
+    return '<div class="event-row">' +
+      '<span class="event-type">' + escapeHTML(ev.tipo || '-') + '</span>' +
+      '<strong>' + escapeHTML(ev.asn ? 'AS' + ev.asn : 'Sistema') + '</strong>' +
+      '<small>' + escapeHTML(formatarTimestamp(ev.timestamp)) + '</small>' +
+      '</div>';
+  }).join('') + '</div>';
+}
+
+function exportarBancoAPI() {
+  BGP_DB.exportarJSON().then(function (snapshot) {
+    downloadJSON(snapshot, 'bgp_analyzer_api_snapshot.json');
+  });
+}
+
+function exportarSnapshotJSON() {
+  BGP_DB.exportarJSON().then(function (snapshot) {
+    downloadJSON(snapshot, 'bgp_analyzer_snapshot.json');
+  });
+}
+
+function exportarWarehouseJSON() {
+  BGP_DB.transformarWarehouse().then(function (warehouse) {
+    downloadJSON(warehouse, 'bgp_analyzer_dataset_kdd.json');
+  });
+}
+
+function migrarBancoLegado() {
+  if (!confirm('Migrar dados do navegador legado para a API atual?')) return;
+  BGP_DB.migrarIndexedDBLegado().then(function (res) {
+    var msg = res.migrado
+      ? 'Migracao concluida: ' + res.total + ' registro(s) importados.'
+      : 'Nenhum dado legado migrado: ' + (res.motivo || 'base vazia.');
+    alert(msg);
+    return dbCarregar();
+  }).then(function () {
+    dbAtualizarUI();
+    atualizarDashboard();
+    popularSelectFiltro();
+    renderDados();
+  }).catch(function (e) {
+    alert('Falha ao migrar banco legado: ' + e);
+  });
+}
+
+function setText(id, value) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function formatarTimestamp(ts) {
+  if (!ts) return '--';
+  try {
+    return new Date(ts).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  } catch (e) {
+    return ts;
+  }
+}
+
+function escapeHTML(value) {
+  return String(value === undefined || value === null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 // ══════════════════════════════════════════════
@@ -1353,18 +1513,18 @@ function renderComparativo(){
   var prefs=keys.map(function(asn){return state.collected[asn].prefixos.length;});
   var p24s=keys.map(function(asn){return (state.prefixos24[asn]||[]).length;});
   var saltos=keys.map(function(asn){return (state.analises[asn]&&state.analises[asn].media_saltos)||0;});
-  var pal=['#4f46e5','#2563eb','#7c3aed','#0891b2','#059669','#dc2626','#d97706','#16a34a','#be185d','#ea580c'];
+  var pal=['#375dfb','#ffb454','#6e56cf','#d92d52','#2563eb','#64748b','#c73868','#b86b00','#5ea1ff','#111827'];
   var palArr=keys.map(function(_,i){return pal[i%pal.length];});
 
   if(activeTab==='bar'){
     if(chartComp1) chartComp1.destroy();
     chartComp1=new Chart(document.getElementById('chartComp1'),{type:'bar',
       data:{labels:ops,datasets:[
-        {label:'Total Prefixos',data:prefs,backgroundColor:'#4f46e520',borderColor:'#4f46e5',borderWidth:1.5,borderRadius:6},
-        {label:'Prefixos /24',data:p24s,backgroundColor:'#2563eb20',borderColor:'#2563eb',borderWidth:1.5,borderRadius:6}
+        {label:'Total Prefixos',data:prefs,backgroundColor:'#375dfb22',borderColor:'#375dfb',borderWidth:1.5,borderRadius:6},
+        {label:'Prefixos /24',data:p24s,backgroundColor:'#ffb4542b',borderColor:'#ffb454',borderWidth:1.5,borderRadius:6}
       ]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{padding:16,usePointStyle:true}}},
-        scales:{y:{beginAtZero:true,grid:{color:'rgba(148,163,184,0.12)'}},x:{grid:{display:false}}}}
+        scales:{y:{beginAtZero:true,grid:{color:'rgba(123,136,152,0.12)'}},x:{grid:{display:false}}}}
     });
   }
   if(activeTab==='radar'){
@@ -1379,7 +1539,7 @@ function renderComparativo(){
         })
       },
       options:{responsive:true,maintainAspectRatio:false,
-        scales:{r:{ticks:{display:false,backdropColor:'transparent'},grid:{color:'rgba(99,140,200,0.10)'},pointLabels:{color:'#7a8ba4',font:{size:11}}}},
+        scales:{r:{ticks:{display:false,backdropColor:'transparent'},grid:{color:'rgba(123,136,152,0.14)'},pointLabels:{color:'#526071',font:{size:11}}}},
         plugins:{legend:{labels:{padding:14,usePointStyle:true,pointStyle:'circle'}}}}
     });
   }
@@ -1389,8 +1549,8 @@ function renderComparativo(){
       data:{datasets:keys.map(function(asn,i){return {label:ops[i],data:[{x:p24s[i],y:saltos[i]}],backgroundColor:palArr[i]+'cc',pointRadius:12,pointHoverRadius:16};})},
       options:{responsive:true,maintainAspectRatio:false,
         plugins:{legend:{labels:{padding:14,usePointStyle:true,pointStyle:'circle'}}},
-        scales:{x:{title:{display:true,text:'Prefixos /24',color:'#3d4f62'},grid:{color:'rgba(99,140,200,0.07)'}},
-                y:{title:{display:true,text:'Media Saltos',color:'#3d4f62'},grid:{color:'rgba(99,140,200,0.07)'}}}}
+        scales:{x:{title:{display:true,text:'Prefixos /24',color:'#526071'},grid:{color:'rgba(123,136,152,0.10)'}},
+                y:{title:{display:true,text:'Media Saltos',color:'#526071'},grid:{color:'rgba(123,136,152,0.10)'}}}}
     });
   }
   renderHeatmap(keys,ops,prefs,p24s,saltos);
@@ -1424,23 +1584,23 @@ window.addEventListener('DOMContentLoaded', function() {
 
   chartPrefixos = new Chart(document.getElementById('chartPrefixos'), {
     type: 'bar',
-    data: { labels: ['Aguardando'], datasets: [{ label: 'Prefixos', data: [0], backgroundColor: 'rgba(79,70,229,0.08)', borderColor: 'rgba(79,70,229,0.2)', borderWidth: 1, borderRadius: 6 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(148,163,184,0.12)' } }, x: { grid: { display: false } } } }
+    data: { labels: ['Aguardando'], datasets: [{ label: 'Prefixos', data: [0], backgroundColor: 'rgba(55,93,251,0.10)', borderColor: 'rgba(55,93,251,0.24)', borderWidth: 1, borderRadius: 6 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(123,136,152,0.12)' } }, x: { grid: { display: false } } } }
   });
   chartDist = new Chart(document.getElementById('chartDist'), {
     type: 'doughnut',
-    data: { labels: ['Aguardando'], datasets: [{ data: [1], backgroundColor: ['rgba(79,70,229,0.08)'], borderWidth: 0 }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } } }
+    data: { labels: ['Aguardando'], datasets: [{ data: [1], backgroundColor: ['rgba(55,93,251,0.10)'], borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { labels: { color: '#7b8898', font: { size: 10 } } } } }
   });
 
-  // ── Carregar estado do IndexedDB ─────────────────────────────────────────
+  // ── Carregar estado da API ───────────────────────────────────────────────
   dbCarregar().then(function(nCarregados) {
     var total = Object.keys(OPERADORAS).length;
-    log('log-terminal', 'Sistema iniciado — IndexedDB conectado.', 'hi');
+    log('log-terminal', 'Sistema iniciado — API Node conectada.', 'hi');
     log('log-terminal', total + ' operadoras disponiveis para coleta.', 'info');
 
     if (nCarregados > 0) {
-      log('log-terminal', '✓ ' + nCarregados + ' ASN(s) carregados do banco IndexedDB.', 'ok');
+      log('log-terminal', 'OK ' + nCarregados + ' ASN(s) carregados da API.', 'ok');
       atualizarDashboard();
       popularSelectFiltro();
       filtrarPrefixos();
@@ -1460,6 +1620,6 @@ window.addEventListener('DOMContentLoaded', function() {
     log('log-terminal', '→ MA: Sao Luis (15) | Imperatriz/Sul (12) | Interior (29)', 'info');
     log('log-terminal', '→ Nordeste (20) | Nacionais (7) | CDN/Educacao (12)', 'info');
   }).catch(function(e) {
-    log('log-terminal', '✗ Erro ao conectar ao IndexedDB: ' + e, 'warn');
+    log('log-terminal', '✗ Erro ao conectar a API: ' + e, 'warn');
   });
 });
