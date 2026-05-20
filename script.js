@@ -1491,12 +1491,6 @@ function renderEventosBanco(eventos) {
   }).join('') + '</div>';
 }
 
-function exportarBancoAPI() {
-  BGP_DB.exportarJSON().then(function (snapshot) {
-    downloadJSON(snapshot, 'bgp_analyzer_api_snapshot.json');
-  });
-}
-
 function exportarSnapshotJSON() {
   BGP_DB.exportarJSON().then(function (snapshot) {
     downloadJSON(snapshot, 'bgp_analyzer_snapshot.json');
@@ -1506,24 +1500,6 @@ function exportarSnapshotJSON() {
 function exportarWarehouseJSON() {
   BGP_DB.transformarWarehouse().then(function (warehouse) {
     downloadJSON(warehouse, 'bgp_analyzer_dataset_kdd.json');
-  });
-}
-
-function migrarBancoLegado() {
-  if (!confirm('Migrar dados do navegador legado para a API atual?')) return;
-  BGP_DB.migrarIndexedDBLegado().then(function (res) {
-    var msg = res.migrado
-      ? 'Migracao concluida: ' + res.total + ' registro(s) importados.'
-      : 'Nenhum dado legado migrado: ' + (res.motivo || 'base vazia.');
-    alert(msg);
-    return dbCarregar();
-  }).then(function () {
-    dbAtualizarUI();
-    atualizarDashboard();
-    popularSelectFiltro();
-    renderDados();
-  }).catch(function (e) {
-    alert('Falha ao migrar banco legado: ' + e);
   });
 }
 

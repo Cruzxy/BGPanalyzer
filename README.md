@@ -351,7 +351,6 @@ BGP_DB.estatisticas()                  // COUNT(*) de todas as tabelas
 BGP_DB.exportarJSON()                  // Snapshot completo para backup
 BGP_DB.exportarJSON()                  // Snapshot completo da API
 BGP_DB.transformarWarehouse()          // Tabela consolidada para analise
-BGP_DB.migrarIndexedDBLegado()         // Migra a base antiga, se existir
 BGP_DB.limparColeta()                  // DELETE FROM operadoras, prefixos, analises
 
 // ── script.js — Application Logic ────────────────────────

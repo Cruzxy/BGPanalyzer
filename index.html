@@ -207,7 +207,7 @@
               <div class="hero-meta">
                 <div><span>Fontes</span><strong>RIPE RIS + PeeringDB</strong></div>
                 <div><span>Escopo</span><strong>IPv4, prefixos /24 e caminhos BGP</strong></div>
-                <div><span>Persistência</span><strong>Node API + MongoDB</strong></div>
+                <div><span>Dados</span><strong>Coletas salvas para análise</strong></div>
               </div>
             </div>
             <div class="signal-map" aria-hidden="true">
@@ -755,10 +755,10 @@
             <div class="page-header-left">
               <div class="page-title">Base de Dados</div>
               <div class="page-desc">
-                Dados salvos pela API e prontos para exportação
-                <span class="page-desc-tag">Node API</span>
-                <span class="page-desc-tag">MongoDB</span>
-                <span class="page-desc-tag">Análise</span>
+                Veja o que já foi salvo e baixe os dados quando precisar
+                <span class="page-desc-tag">Dados salvos</span>
+                <span class="page-desc-tag">Exportação</span>
+                <span class="page-desc-tag">Histórico</span>
               </div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -768,12 +768,12 @@
                 </svg>
                 Atualizar
               </button>
-              <button class="btn btn-primary btn-sm" onclick="exportarBancoAPI()">
+              <button class="btn btn-primary btn-sm" onclick="exportarSnapshotJSON()">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8">
                   <path d="M6 1v7M3 5l3 3 3-3" />
                   <path d="M1 10h10" />
                 </svg>
-                JSON
+                Baixar backup
               </button>
             </div>
           </div>
@@ -781,63 +781,63 @@
           <div class="explain-panel">
             <div>
               <span>O que faz</span>
-              <strong>Guarda tudo em um lugar só</strong>
+              <strong>Mostra o estado atual da base</strong>
             </div>
-            <p>A API salva os dados no MongoDB ou no arquivo local de desenvolvimento. Depois você pode baixar backup JSON ou exportar a tabela de análise.</p>
+            <p>Esta aba mostra quantos dados já foram coletados, onde eles estão salvos e oferece dois downloads: um backup completo e uma tabela mais simples para análise.</p>
           </div>
 
           <div class="grid g4" style="margin-bottom:16px">
             <div class="stat-card c-blue">
-              <div class="stat-label">Engine</div>
+              <div class="stat-label">Armazenamento</div>
               <div class="stat-value v-blue" id="dados-engine" style="font-size:20px;letter-spacing:0">MongoDB</div>
-              <div class="stat-sub">API Node.js</div>
+              <div class="stat-sub">onde a base está salva</div>
             </div>
             <div class="stat-card c-accent">
-              <div class="stat-label">Schema</div>
+              <div class="stat-label">Estrutura</div>
               <div class="stat-value v-accent" id="dados-schema">4</div>
-              <div class="stat-sub">versionado e indexado</div>
+              <div class="stat-sub">versão dos dados</div>
             </div>
             <div class="stat-card">
-              <div class="stat-label">Tamanho</div>
+              <div class="stat-label">Espaço usado</div>
               <div class="stat-value" id="dados-size" style="font-size:24px;letter-spacing:0">0 B</div>
-              <div class="stat-sub">armazenado localmente</div>
+              <div class="stat-sub">tamanho aproximado</div>
             </div>
             <div class="stat-card c-ok">
-              <div class="stat-label">Registros</div>
+              <div class="stat-label">Total salvo</div>
               <div class="stat-value v-accent" id="dados-registros">0</div>
-              <div class="stat-sub">linhas principais</div>
+              <div class="stat-sub">registros principais</div>
             </div>
           </div>
 
           <div class="grid g21" style="margin-bottom:16px">
             <div class="card">
               <div class="card-header">
-                <div class="card-title">Ações da base de dados</div>
-                <span class="tag">BGP_DB</span>
+                <div class="card-title">Exportar dados</div>
+                <span class="tag">Downloads</span>
               </div>
               <div class="card-inner">
+                <p class="helper-copy">Use o backup completo para guardar ou restaurar a base. Use a tabela de análise quando quiser trabalhar os resultados em outro sistema.</p>
                 <div class="data-actions">
-                  <button class="btn btn-secondary btn-sm" onclick="exportarSnapshotJSON()">Snapshot JSON</button>
+                  <button class="btn btn-secondary btn-sm" onclick="exportarSnapshotJSON()">Backup completo</button>
                   <button class="btn btn-secondary btn-sm" onclick="exportarWarehouseJSON()">Tabela de análise</button>
-                  <button class="btn btn-secondary btn-sm" onclick="migrarBancoLegado()">Migrar navegador legado</button>
                 </div>
                 <div class="api-list">
-                  <div><strong>Coleta</strong><span>Guarda operadoras, prefixos e eventos da execução.</span></div>
-                  <div><strong>Análise</strong><span>Salva resultados do caminho BGP e monta a tabela consolidada.</span></div>
-                  <div><strong>Mitigação</strong><span>Guarda os prefixos com MOAS e os ASNs que aparecem como mitigadores.</span></div>
-                  <div><strong>Exportação</strong><span>Baixa backup JSON, tabela de análise e dados migrados do navegador antigo.</span></div>
+                  <div><strong>Backup completo</strong><span>Inclui operadoras, prefixos, análises, mitigação, eventos e metadados.</span></div>
+                  <div><strong>Tabela de análise</strong><span>Resume os dados por operadora, com /24, MOAS e pontuação de risco.</span></div>
+                  <div><strong>Eventos recentes</strong><span>Mostram as últimas ações feitas na base, como coleta, limpeza ou exportação.</span></div>
+                  <div><strong>Resumo salvo</strong><span>Confirma rapidamente se a coleta já gerou dados suficientes para análise.</span></div>
                 </div>
               </div>
             </div>
 
             <div class="card">
               <div class="card-header">
-                <div class="card-title">Status da Base</div>
+                <div class="card-title">Resumo salvo</div>
               </div>
               <div class="card-inner" id="dados-status">
                 <div class="empty">
                   <div class="empty-icon">DB</div>
-                  <div class="empty-text">Carregando estatisticas...</div>
+                  <div class="empty-text">Carregando resumo...</div>
                 </div>
               </div>
             </div>
