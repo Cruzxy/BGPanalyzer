@@ -1872,18 +1872,71 @@ function renderComparativo(){
 
 function renderHeatmap(keys,ops,prefs,p24s,saltos){
   var container=document.getElementById('heatmap-container');
-  var metrics=['Volume','/24','Saltos','Atenção'];
   var maxP=Math.max.apply(null,prefs.concat([1])),maxP24=Math.max.apply(null,p24s.concat([1])),maxS=Math.max.apply(null,saltos.concat([1]));
-  var getColor=function(v){ var al=0.2+v*0.75; return v>0.7?'rgba(239,68,68,'+al+')':v>0.4?'rgba(234,179,8,'+al+')':'rgba(34,197,94,'+al+')'; };
-  var html='<div style="display:grid;grid-template-columns:minmax(140px,1.2fr) repeat('+metrics.length+',1fr);gap:6px;margin-bottom:8px"><div></div>'+
-    metrics.map(function(m){return '<div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-align:center;padding:4px;text-transform:uppercase;letter-spacing:1.2px">'+m+'</div>';}).join('')+'</div>';
-  html+='<div style="display:grid;grid-template-columns:minmax(140px,1.2fr) repeat('+metrics.length+',1fr);gap:6px">';
-  keys.forEach(function(asn,i){
-    var vals=[prefs[i]/maxP,p24s[i]/maxP24,saltos[i]/maxS,(state.analises[asn]&&state.analises[asn].desvio_suspeito)?1:0.15];
-    html+='<div title="'+escapeHTML(ops[i])+'" style="font-size:11px;color:var(--text2);display:flex;align-items:center;font-family:var(--mono);overflow:hidden;white-space:nowrap;text-overflow:ellipsis">'+escapeHTML(ops[i])+'</div>';
-    vals.forEach(function(v){ html+='<div class="heatmap-cell" style="height:38px;background:'+getColor(v)+';display:flex;align-items:center;justify-content:center;font-size:10px;font-family:var(--mono);color:rgba(255,255,255,0.85);font-weight:600;opacity:'+(0.7+v*0.3)+'">'+Math.round(v*100)+'%</div>'; });
+  var rows = keys.map(function(asn, i) {
+    var alerta = state.analises[asn] && state.analises[asn].desvio_suspeito;
+    var volumeScore = prefs[i] / maxP;
+    var p24Score = p24s[i] / maxP24;
+    var saltoScore = maxS ? saltos[i] / maxS : 0;
+    var atencaoScore = alerta ? 1 : Math.min(0.95, (volumeScore * 0.25) + (p24Score * 0.25) + (saltoScore * 0.50));
+    return {
+      asn: asn,
+      nome: ops[i],
+      prefixos: prefs[i],
+      p24: p24s[i],
+      saltos: saltos[i] || 0,
+      alerta: !!alerta,
+      scores: {
+        volume: Math.round(volumeScore * 100),
+        p24: Math.round(p24Score * 100),
+        saltos: Math.round(saltoScore * 100),
+        atencao: Math.round(atencaoScore * 100)
+      }
+    };
+  }).sort(function(a, b) {
+    return b.scores.atencao - a.scores.atencao;
   });
-  html+='</div>';
+
+  function nivel(row) {
+    if (row.alerta || row.scores.atencao >= 75) return { label: 'Alta atenção', cls: 'risk-high' };
+    if (row.scores.atencao >= 40) return { label: 'Acompanhar', cls: 'risk-mid' };
+    return { label: 'Normal', cls: 'risk-low' };
+  }
+
+  function metric(label, value, score, hint) {
+    return '<div class="attention-metric" title="' + escapeHTML(hint) + '">' +
+      '<div class="attention-metric-head"><span>' + escapeHTML(label) + '</span><strong>' + escapeHTML(value) + '</strong></div>' +
+      '<div class="attention-bar"><i style="width:' + Math.max(3, Math.min(100, score)) + '%"></i></div>' +
+    '</div>';
+  }
+
+  var html =
+    '<div class="attention-legend">' +
+      '<span><i class="risk-low"></i>Normal</span>' +
+      '<span><i class="risk-mid"></i>Acompanhar</span>' +
+      '<span><i class="risk-high"></i>Alta atenção</span>' +
+      '<small>Os percentuais são relativos ao maior valor coletado no momento.</small>' +
+    '</div>' +
+    '<div class="attention-list">';
+
+  rows.forEach(function(row) {
+    var n = nivel(row);
+    html += '<div class="attention-row">' +
+      '<div class="attention-operator">' +
+        '<span class="risk-dot ' + n.cls + '"></span>' +
+        '<div><strong title="' + escapeHTML(row.nome) + '">' + escapeHTML(row.nome) + '</strong>' +
+        '<small>AS' + escapeHTML(row.asn) + ' · ' + escapeHTML(n.label) + '</small></div>' +
+      '</div>' +
+      '<div class="attention-metrics">' +
+        metric('Volume', row.prefixos + ' prefixos', row.scores.volume, 'Total de prefixos IPv4 desta operadora em relação ao maior volume coletado.') +
+        metric('/24', row.p24 + ' blocos', row.scores.p24, 'Quantidade de prefixos /24 em relação à maior quantidade coletada.') +
+        metric('Saltos', row.saltos + ' méd.', row.scores.saltos, 'Média de saltos BGP em relação à maior média encontrada.') +
+        metric('Atenção', row.scores.atencao + '%', row.scores.atencao, 'Combina saltos, volume, /24 e alerta de caminho incomum.') +
+      '</div>' +
+    '</div>';
+  });
+
+  html += '</div>';
   container.innerHTML=html;
 }
 

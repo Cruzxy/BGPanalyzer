@@ -104,6 +104,7 @@ BGP ANALYZER — Arquitetura
 | **Prefixo IP** | Bloco de endereços IP anunciado por uma rede. Exemplo: `177.71.128.0/24`. |
 | **/24** | Bloco IPv4 com até 256 endereços. É comum em mitigação porque é específico. |
 | **AS-PATH** | Lista de ASNs por onde uma rota passou. Muitos saltos podem indicar caminho incomum. |
+| **Saltos** | Quantidade de redes no caminho BGP até um prefixo. Quanto maior o número, mais longo é o caminho da rota. |
 | **MOAS** | Mesmo prefixo anunciado por dois ou mais ASNs de origem. Pode indicar mitigação ou mudança de rota. |
 | **Scrubbing** | Limpeza de tráfego DDoS por um provedor especializado. Ele filtra o ataque e entrega o tráfego válido. |
 | **Upstream** | Rede usada como caminho de saída para a Internet. Ter mais de um upstream aumenta a redundância. |
