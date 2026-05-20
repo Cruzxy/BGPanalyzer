@@ -9,9 +9,9 @@
 ![HTML5](https://img.shields.io/badge/HTML5-Frontend-e34f26?style=for-the-badge&logo=html5&logoColor=white)
 ![RIPE NCC](https://img.shields.io/badge/RIPE%20NCC-API-005ea5?style=for-the-badge)
 
-**Sistema analítico de Mineração de Dados aplicado à infraestrutura de Internet — Detecção de Padrões BGP em Cenários de Mitigação de Tráfego DDoS**
+**Sistema para coletar dados BGP, entender rotas de operadoras e identificar sinais de mitigação DDoS**
 
-[📚 Contexto Acadêmico](#-contexto-acadêmico) · [🎯 Problema](#-problema) · [🏗️ Arquitetura](#️-arquitetura) · [🚀 Como Usar](#-como-usar) · [📊 Funcionalidades](#-funcionalidades) · [🔬 Metodologia KDD](#-metodologia-kdd)
+[📚 Contexto Acadêmico](#-contexto-acadêmico) · [🎯 Problema](#-problema) · [🏗️ Arquitetura](#️-arquitetura) · [📘 Glossário](#-glossário-rápido) · [🚀 Como Usar](#-como-usar) · [📊 Funcionalidades](#-funcionalidades)
 
 </div>
 
@@ -31,25 +31,25 @@
 | **Carga Horária** | 68 horas |
 | **Eixo Temático** | Tecnologias Aplicadas — Indústria, Inovação e Infraestrutura |
 
-> Este projeto é o **PBL (Project-Based Learning)** da disciplina de Mineração de Dados, desenvolvido por alunos do 7º período de Engenharia de Software da UNDB, com o objetivo de aplicar técnicas de Descoberta de Conhecimento em Bases de Dados (KDD) em um ambiente real de infraestrutura de Internet.
+> Este projeto é o **PBL (Project-Based Learning)** da disciplina de Mineração de Dados. Ele aplica coleta, organização e análise de dados em um cenário real de infraestrutura de Internet.
 
 ---
 
 ## 🎯 Problema
 
-O ecossistema de conectividade das operadoras de Internet tem enfrentado um aumento significativo na complexidade do tráfego global. Em cenários de ataque **DDoS (Distributed Denial of Service)**, prefixos IP são redirecionados para fornecedores especializados em mitigação, que passam a anunciá-los integralmente na tabela BGP global.
+Quando uma operadora sofre um ataque **DDoS**, ela pode enviar o tráfego para um provedor de mitigação. Esse provedor filtra o tráfego ruim e pode passar a anunciar os prefixos da operadora na tabela BGP global.
 
 ### ❌ Situação Atual (Problema)
 
-- Análise de eventos de mitigação ocorre de forma **manual, pontual e reativa**
-- Consultas isoladas a ferramentas de Looking Glass sem consolidação histórica
-- **Nenhum mecanismo estruturado** para identificar prefixos 100% anunciados por ASNs mitigadores
-- Impossibilidade de comparar períodos, calcular percentuais ou identificar padrões recorrentes
-- Gestão técnica com **visibilidade limitada** sobre tendências, sazonalidade e reincidência
+- A análise costuma ser manual e feita só depois do incidente
+- As consultas ficam espalhadas em ferramentas diferentes
+- É difícil saber quais prefixos aparecem com outro ASN de origem
+- Fica difícil comparar operadoras, medir percentuais e encontrar padrões
+- A equipe técnica perde visibilidade sobre risco e recorrência
 
 ### ✅ Proposta de Solução
 
-Estruturar um mecanismo analítico capaz de **coletar, armazenar, minerar e interpretar dados BGP** para identificar prefixos 100% mitigados e apoiar decisões técnicas baseadas em evidências.
+Criar um painel que coleta dados BGP, salva os resultados e mostra sinais de mitigação DDoS de forma visual. O objetivo é responder perguntas simples: quais operadoras foram coletadas, quais prefixos /24 aparecem, quais rotas parecem incomuns e quais ASNs podem estar atuando como mitigadores.
 
 ---
 
@@ -61,7 +61,7 @@ BGP ANALYZER — Arquitetura
 ├── style.css           → Design system — dark mode + glassmorphism
 ├── server.js           → API Node.js + MongoDB + servidor da UI
 ├── db.js               → Cliente REST BGP_DB usado pela interface
-└── script.js           → Lógica da aplicação + 95+ operadoras
+└── script.js           → Lógica da aplicação + 150 operadoras
 ```
 
 ### Banco de Dados — API Node.js + MongoDB
@@ -95,17 +95,33 @@ BGP ANALYZER — Arquitetura
 
 ---
 
+## 📘 Glossário Rápido
+
+| Termo | Significado simples |
+|-------|---------------------|
+| **BGP** | Protocolo usado pelas redes para informar por onde os blocos de IP trafegam na Internet. |
+| **ASN** | Número que identifica uma rede, operadora, provedor ou grande empresa. Exemplo: AS28573. |
+| **Prefixo IP** | Bloco de endereços IP anunciado por uma rede. Exemplo: `177.71.128.0/24`. |
+| **/24** | Bloco IPv4 com até 256 endereços. É comum em mitigação porque é específico. |
+| **AS-PATH** | Lista de ASNs por onde uma rota passou. Muitos saltos podem indicar caminho incomum. |
+| **MOAS** | Mesmo prefixo anunciado por dois ou mais ASNs de origem. Pode indicar mitigação ou mudança de rota. |
+| **Scrubbing** | Limpeza de tráfego DDoS por um provedor especializado. Ele filtra o ataque e entrega o tráfego válido. |
+| **Upstream** | Rede usada como caminho de saída para a Internet. Ter mais de um upstream aumenta a redundância. |
+| **RIPE Stat** | Fonte pública usada para consultar prefixos, rotas e dados BGP. |
+| **PeeringDB** | Base pública com informações sobre redes, pontos de troca e tipo de provedor. |
+
+---
+
 ## 📊 Funcionalidades
 
 ### 1. 🌐 Dashboard Geral
-- Painel de visão geral com métricas consolidadas
-- Contagem total de operadoras, prefixos, /24 detectados e desvios suspeitos
-- Gráficos de barras e doughnut para distribuição de prefixos
-- Status em tempo real de todas as operadoras coletadas
+- Mostra a visão geral da coleta
+- Exibe operadoras, prefixos, /24 e possíveis caminhos incomuns
+- Mostra gráficos simples para comparar os dados coletados
 
 ### 2. 📡 Coletor BGP
-- Coleta dados de **95+ operadoras** do Maranhão e Brasil via RIPE Stat API
-- Suporte a coleta individual por ASN ou em massa por grupo regional
+- Coleta dados de **150 operadoras** do Maranhão e Brasil via RIPE Stat
+- Permite coletar uma operadora, digitar um ASN manualmente ou coletar um grupo regional
 - **Grupos pré-configurados:**
   - MA São Luís / Grande Ilha (20 operadoras)
   - MA PTT São Luís — IX.br (50 operadoras verificadas)
@@ -114,49 +130,44 @@ BGP ANALYZER — Arquitetura
   - Nordeste com cobertura no MA (20 operadoras)
   - Grandes Nacionais (7 operadoras)
   - Trânsito / CDN / Educação (12 redes)
-- Terminal de log em tempo real com timestamps
-- Dados integrados com PeeringDB para tipo de rede
+- Mostra o andamento da coleta no terminal da tela
+- Usa PeeringDB para complementar o tipo da rede
 
 ### 3. 🔍 Analisador de Desvios BGP
 - Análise individual de qualquer prefixo IP
-- Detecção de desvios suspeitos via **AS-PATH** (média de saltos > 6 ou alta diversidade de paths)
-- Visualização dos ASNs mais frequentes no caminho
-- Gráfico de distribuição de comprimento de AS-PATHs
-- Consulta ao **RIPE RIS Live** (RouteViews Collector — RRCs)
+- Mostra o **AS-PATH**, ou seja, o caminho da rota até o prefixo
+- Indica caminho incomum quando há muitos saltos ou muitos caminhos diferentes
+- Mostra quais ASNs aparecem com mais frequência no caminho
 
 ### 4. 📋 Mapa de Prefixos /24
-- Listagem completa de todos os prefixos /24 coletados
+- Lista todos os prefixos /24 coletados
 - Filtro por operadora e busca textual
 - Exportação para CSV
-- Integração com o Analisador para análise direta de cada prefixo
+- Botão para analisar um prefixo diretamente no Analisador
 
 ### 5. 📄 Relatório Final
-- Tabela consolidada com métricas de todas as operadoras analisadas:
-  - Total de prefixos, quantidade de /24, percentual de /24
-  - Top região, tipo PeeringDB
-  - Desvio suspeito detectado e média de saltos
-- Exportação para CSV (equivalente ao `relatorio_bgp.csv`)
+- Junta os principais resultados em uma tabela por operadora
+- Mostra total de prefixos, quantidade de /24, tipo de rede, caminho incomum e média de saltos
+- Exporta o resultado para CSV
 
 ### 6. 📊 Análise Comparativa
 - **Gráfico de Barras**: Total de prefixos por operadora
-- **Radar Chart**: Comparativo multidimensional normalizado
-- **Scatter Plot**: Relação entre prefixos /24 vs. média de saltos
-- **Heatmap de Risco**: Intensidade de risco por operadora
+- **Radar**: comparação geral em escala comum
+- **Dispersão**: relação entre prefixos /24 e média de saltos
+- **Mapa de risco**: resumo visual das operadoras com mais sinais de atenção
 
 ### 7. 🛡️ Análise de Mitigação DDoS *(Feature Principal)*
-- Detecta **MOAS (Multiple Origin AS)** — co-anúncios suspeitos de prefixos /24
-- Identifica **ASNs fazendo scrubbing** (mitigação ativa de DDoS)
-- Verifica redundância de paths (múltiplos upstreams)
-- Base de dados de **26+ provedores de scrubbing conhecidos** (Cloudflare, Akamai, Huge Networks, etc.)
-- Scan paralelo configurável (3, 5 ou 8 consultas simultâneas)
-- Barra de progresso com ETA em tempo real
-- Exportação dos resultados para CSV
+- Detecta **MOAS**, que é quando o mesmo prefixo aparece com mais de um ASN de origem
+- Identifica possíveis ASNs mitigadores
+- Verifica se o prefixo tem 2 ou mais caminhos de saída, o que indica redundância
+- Usa uma base de **26+ provedores conhecidos de scrubbing** como referência
+- Permite analisar todos os prefixos coletados e exportar o resultado para CSV
 
 ---
 
-## 🔬 Metodologia KDD
+## 🔬 Metodologia de Análise
 
-O projeto aplica o processo **KDD (Knowledge Discovery in Databases)** completo:
+O projeto usa uma sequência simples de mineração de dados:
 
 ```
 SELEÇÃO → PRÉ-PROCESSAMENTO → TRANSFORMAÇÃO → MINERAÇÃO → INTERPRETAÇÃO
@@ -164,7 +175,7 @@ SELEÇÃO → PRÉ-PROCESSAMENTO → TRANSFORMAÇÃO → MINERAÇÃO → INTERPR
 
 ### Etapas Implementadas
 
-| Etapa KDD | Implementação no BGP Analyzer |
+| Etapa | Como aparece no BGP Analyzer |
 |-----------|-------------------------------|
 | **Seleção** | Consulta via RIPE Stat API e PeeringDB por ASN |
 | **Pré-processamento** | Filtro de prefixos /24, normalização de AS-PATH |
@@ -177,10 +188,10 @@ SELEÇÃO → PRÉ-PROCESSAMENTO → TRANSFORMAÇÃO → MINERAÇÃO → INTERPR
 | Variável | Descrição |
 |----------|-----------|
 | **Prefixo IP** | Bloco de endereçamento IPv4 (foco em /24) |
-| **ASN de Origem** | Autonomous System Number legítimo do anunciante |
-| **ASN Mitigador** | ASN que co-anuncia o prefixo (MOAS) |
-| **AS-PATH** | Sequência de ASNs no caminho de roteamento |
-| **Communities BGP** | Atributos de roteamento e engenharia de tráfego |
+| **ASN de Origem** | Rede que anuncia o prefixo como origem principal |
+| **ASN Mitigador** | Rede que também aparece anunciando o prefixo durante possível mitigação |
+| **AS-PATH** | Sequência de redes no caminho da rota |
+| **Communities BGP** | Marcadores usados por redes para políticas de roteamento |
 | **Timestamp** | Momento da coleta para análise temporal |
 | **Tipo de Rede** | Classificação via PeeringDB (ISP, CDN, IX, etc.) |
 
@@ -246,12 +257,12 @@ npm start
 
 3. ANALISADOR
    └─ Insira um prefixo /24 para análise detalhada
-   └─ Verifique desvios suspeitos no AS-PATH
+   └─ Veja o caminho BGP e possíveis rotas incomuns
 
 4. MITIGAÇÃO DDOS ← Feature Principal
    └─ Clique em "Analisar Todos os Prefixos"
-   └─ Aguarde o scan MOAS em todos os /24 coletados
-   └─ Identifique ASNs fazendo scrubbing ativo
+   └─ Aguarde a análise de MOAS nos /24 coletados
+   └─ Veja quais ASNs podem estar atuando como mitigadores
 
 5. RELATÓRIO
    └─ Exporte os resultados para CSV
@@ -261,7 +272,7 @@ npm start
 
 ## 🏢 Provedores de Mitigação Monitorados
 
-O sistema possui uma base de dados com **26+ provedores de scrubbing** conhecidos, incluindo:
+O sistema possui uma base de dados com **26+ provedores conhecidos de scrubbing**. Eles servem como referência para identificar redes que costumam atuar na limpeza de tráfego DDoS.
 
 ### 🌍 Internacionais
 | ASN | Provedor |
@@ -320,7 +331,7 @@ BGPanalyzer/
 ├── style.css           # Design system — dark mode SaaS + glassmorphism
 ├── server.js           # API Node.js, MongoDB e servidor estatico da UI
 ├── db.js               # Cliente REST usado pela interface
-├── script.js           # Lógica da aplicação + 95 operadoras cadastradas
+├── script.js           # Lógica da aplicação + 150 operadoras cadastradas
 └── README.md           # Este arquivo
 ```
 
@@ -339,7 +350,7 @@ BGP_DB.contarDesvios()                 // SELECT COUNT(*) WHERE desvio_suspeito 
 BGP_DB.estatisticas()                  // COUNT(*) de todas as tabelas
 BGP_DB.exportarJSON()                  // Snapshot completo para backup
 BGP_DB.exportarJSON()                  // Snapshot completo da API
-BGP_DB.transformarWarehouse()          // Dataset analitico para KDD
+BGP_DB.transformarWarehouse()          // Tabela consolidada para analise
 BGP_DB.migrarIndexedDBLegado()         // Migra a base antiga, se existir
 BGP_DB.limparColeta()                  // DELETE FROM operadoras, prefixos, analises
 
@@ -348,8 +359,8 @@ dbCarregar()               // Carrega estado da API para memória
 dbSalvarEntry()            // Persiste operadora coletada pela API
 iniciarColeta()            // Coleta por ASN individual
 coletarGrupo()             // Coleta por grupo regional
-analisarPrefixo()          // Análise de AS-PATH
-iniciarMitigacaoScan()     // Scan MOAS / scrubbing
+analisarPrefixo()          // Analisa o caminho BGP de um prefixo
+iniciarMitigacaoScan()     // Procura MOAS e possiveis mitigadores
 verificarMitigacaoPrefixo() // Verificação individual
 renderTabelaMitigacao()    // UI — tabela de mitigadores
 renderComparativo()        // UI — gráficos comparativos
@@ -376,19 +387,19 @@ exportarRelatorio()        // Export CSV
 ## 🔭 Roadmap Técnico
 
 - [x] Dashboard geral com métricas consolidadas
-- [x] Coletor BGP com 95+ operadoras (MA + Brasil)
+- [x] Coletor BGP com 150 operadoras (MA + Brasil)
 - [x] Integração RIPE Stat API (dados reais)
 - [x] Integração PeeringDB API
-- [x] Análise de AS-PATH e detecção de desvios
+- [x] Análise de caminho BGP e detecção de rotas incomuns
 - [x] Mapa de prefixos /24 com filtros
 - [x] Análise comparativa (Bar, Radar, Scatter)
 - [x] Backend Node.js com API REST
 - [x] Banco persistente em MongoDB
 - [x] **Análise de Mitigação DDoS (MOAS)**
-- [x] Scan paralelo configurável com ETA
+- [x] Análise paralela configurável com ETA
 - [x] Export CSV (relatórios e mitigação)
 - [x] **Migração do banco do browser para API Node/MongoDB**
-- [x] Tela de Base de Dados com snapshot JSON e dataset KDD
+- [x] Tela de Base de Dados com backup JSON e tabela de análise
 - [ ] Análise temporal (séries históricas)
 - [ ] Clustering de comportamento de anúncios
 - [ ] Interpretabilidade de modelos (SHAP/LIME)

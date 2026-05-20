@@ -185,8 +185,8 @@
                 <span class="hero-live"></span>
                 BGP Operations Console
               </div>
-              <h1 id="dashboard-title">Console operacional para rotas, /24 e mitigação</h1>
-              <p>Coleta RIPE RIS e PeeringDB, cruza AS-PATH e destaca sinais de MOAS para investigar provedores, prefixos e risco de scrubbing sem sair do painel.</p>
+              <h1 id="dashboard-title">Painel para entender rotas e mitigação DDoS</h1>
+              <p>Use este painel para coletar dados das operadoras, ver quais blocos de IP elas anunciam e encontrar sinais de mitigação DDoS. Quando aparecer um termo técnico, o glossário abaixo explica em linguagem simples.</p>
               <div class="hero-actions">
                 <button class="btn btn-primary"
                   onclick="navigate(document.querySelector('[data-page=coletor]'),'coletor')">
@@ -201,12 +201,12 @@
                     <circle cx="5" cy="5" r="4" />
                     <path d="M11 11L8 8" />
                   </svg>
-                  Scan MOAS
+                  Analisar MOAS
                 </button>
               </div>
               <div class="hero-meta">
                 <div><span>Fontes</span><strong>RIPE RIS + PeeringDB</strong></div>
-                <div><span>Escopo</span><strong>IPv4, /24, AS-PATH</strong></div>
+                <div><span>Escopo</span><strong>IPv4, prefixos /24 e caminhos BGP</strong></div>
                 <div><span>Persistência</span><strong>Node API + MongoDB</strong></div>
               </div>
             </div>
@@ -230,40 +230,59 @@
           <div class="module-guide">
             <button class="guide-card" onclick="navigate(document.querySelector('[data-page=coletor]'),'coletor')">
               <span class="guide-kicker">Coletor</span>
-              <strong>Busca prefixos reais por ASN</strong>
-              <span>Consulta RIPE Stat e PeeringDB, normaliza IPv4 e salva tudo na API Node.</span>
+              <strong>Busca os blocos IP de cada rede</strong>
+              <span>Você escolhe uma operadora ou digita um ASN. O sistema consulta fontes públicas e salva o resultado.</span>
             </button>
             <button class="guide-card" onclick="navigate(document.querySelector('[data-page=analisador]'),'analisador')">
               <span class="guide-kicker">Analisador</span>
-              <strong>Interpreta AS-PATH</strong>
-              <span>Mede saltos, diversidade de caminhos e sinais de desvio operacional.</span>
+              <strong>Mostra o caminho da rota</strong>
+              <span>AS-PATH é a lista de redes por onde o tráfego passa até chegar ao prefixo.</span>
             </button>
             <button class="guide-card" onclick="navigate(document.querySelector('[data-page=mitigacao]'),'mitigacao')">
               <span class="guide-kicker">Mitigacao</span>
-              <strong>Detecta MOAS e scrubbing</strong>
-              <span>Procura prefixos /24 co-anunciados por outro ASN e avalia redundancia.</span>
+              <strong>Procura sinais de mitigação</strong>
+              <span>MOAS aparece quando o mesmo prefixo é anunciado por mais de um ASN.</span>
             </button>
             <button class="guide-card" onclick="navigate(document.querySelector('[data-page=dados]'),'dados')">
               <span class="guide-kicker">Base</span>
-              <strong>Transforma dados em produto</strong>
-              <span>Exporta snapshot JSON, MongoDB/API e dataset analitico pronto para KDD.</span>
+              <strong>Organiza a base coletada</strong>
+              <span>Gera arquivos de exportação e uma tabela pronta para análise.</span>
             </button>
+          </div>
+
+          <div class="glossary-panel" aria-label="Glossário rápido de termos BGP">
+            <div class="glossary-head">
+              <span>Glossário rápido</span>
+              <strong>Termos técnicos em linguagem simples</strong>
+            </div>
+            <div class="glossary-grid">
+              <div><b>BGP</b><span>Protocolo que informa por quais redes os blocos de IP passam na Internet.</span></div>
+              <div><b>ASN</b><span>Número que identifica uma rede, operadora, provedor ou grande empresa na Internet.</span></div>
+              <div><b>Prefixo IP</b><span>Bloco de endereços IP anunciado por uma rede. Exemplo: 177.71.128.0/24.</span></div>
+              <div><b>/24</b><span>Bloco IPv4 com até 256 endereços. É muito usado porque permite anúncios mais específicos.</span></div>
+              <div><b>AS-PATH</b><span>Lista de ASNs no caminho da rota. Muitos saltos podem indicar rota incomum.</span></div>
+              <div><b>MOAS</b><span>Mesmo prefixo com dois ou mais ASNs de origem. Pode indicar mitigação ou alteração de rota.</span></div>
+              <div><b>Scrubbing</b><span>Limpeza de tráfego DDoS feita por um provedor especializado antes de entregar o tráfego válido.</span></div>
+              <div><b>Upstream</b><span>Rede usada como saída para a Internet. Ter 2 ou mais caminhos aumenta a redundância.</span></div>
+              <div><b>RIPE Stat</b><span>Fonte pública que mostra anúncios BGP, prefixos e caminhos vistos na Internet.</span></div>
+              <div><b>PeeringDB</b><span>Base pública com informações sobre redes, pontos de troca e tipo de provedor.</span></div>
+            </div>
           </div>
 
           <div class="ops-panel">
             <div class="ops-card">
               <div class="ops-kicker"><span>Operacao sugerida</span><span class="ops-chip"><i class="ops-dot"></i>online</span></div>
-              <h3>Fluxo de analise BGP em 3 etapas</h3>
+              <h3>Fluxo recomendado em 3 etapas</h3>
               <div class="ops-stack">
-                <div class="ops-step"><b>1</b><span>Coletar ASNs ou grupos regionais.</span></div>
-                <div class="ops-step"><b>2</b><span>Mapear /24 e validar AS-PATH.</span></div>
-                <div class="ops-step"><b>3</b><span>Rodar MOAS para encontrar scrubbing.</span></div>
+                <div class="ops-step"><b>1</b><span>Coletar uma operadora, um ASN manual ou um grupo regional.</span></div>
+                <div class="ops-step"><b>2</b><span>Ver os prefixos /24 e o caminho das rotas.</span></div>
+                <div class="ops-step"><b>3</b><span>Analisar MOAS para encontrar possíveis mitigadores DDoS.</span></div>
               </div>
             </div>
             <div class="ops-card">
-              <div class="ops-kicker"><span>API e persistencia</span><span>Node</span></div>
+              <div class="ops-kicker"><span>Base de dados</span><span>Node</span></div>
               <h3>Dados centralizados fora do navegador</h3>
-              <p>A interface fala com a API REST em `/api`; a API persiste em MongoDB ou fallback local de desenvolvimento.</p>
+              <p>A interface envia tudo para a API. A API salva no MongoDB ou, em desenvolvimento, em um arquivo local.</p>
               <div class="ops-chip-row">
                 <span class="ops-chip">/api/stats</span>
                 <span class="ops-chip">/api/operadoras</span>
@@ -271,13 +290,13 @@
               </div>
             </div>
             <div class="ops-card">
-              <div class="ops-kicker"><span>Leitura do painel</span><span>KDD</span></div>
+              <div class="ops-kicker"><span>Leitura do painel</span><span>Resumo</span></div>
               <h3>Resumo primeiro, detalhe depois</h3>
-              <p>Os cards mostram saude operacional; tabelas e graficos entram em seguida para investigacao e exportacao.</p>
+              <p>Os cards mostram o essencial. As tabelas e gráficos ficam logo abaixo para investigação e exportação.</p>
               <div class="ops-chip-row">
-                <span class="ops-chip">Data-dense</span>
-                <span class="ops-chip">Real-time</span>
-                <span class="ops-chip">AA</span>
+                <span class="ops-chip">Resumo</span>
+                <span class="ops-chip">Detalhes</span>
+                <span class="ops-chip">CSV</span>
               </div>
             </div>
           </div>
@@ -285,7 +304,7 @@
           <div class="grid g4" style="margin-bottom:20px">
             <div class="stat-card c-accent">
               <div class="stat-label">Operadoras</div>
-              <div class="stat-value v-accent" id="dash-total-ops">95</div>
+              <div class="stat-value v-accent" id="dash-total-ops">150</div>
               <div class="stat-sub">disponíveis para coleta</div>
               <div class="stat-icon">ASN</div>
             </div>
@@ -361,7 +380,7 @@
             <div class="page-header-left">
               <div class="page-title">Coletor BGP</div>
               <div class="page-desc">
-                Coleta dados de ASN via RIPE Stat API e PeeringDB
+                Busca os blocos de IP anunciados por uma operadora ou ASN
                 <span class="page-desc-tag">RIPE NCC</span>
               </div>
             </div>
@@ -370,9 +389,9 @@
           <div class="explain-panel">
             <div>
               <span>O que faz</span>
-              <strong>Coleta, limpa e persiste anuncios BGP</strong>
+              <strong>Coleta os prefixos de uma rede</strong>
             </div>
-            <p>Use esta etapa para transformar um ASN ou grupo regional em dados estruturados: prefixos IPv4, prefixos /24, holder, tipo de rede e uma primeira leitura de AS-PATH.</p>
+            <p>ASN é o número de uma rede na Internet. Nesta etapa, o sistema busca os prefixos IPv4 anunciados, separa os /24 e salva tudo para as próximas análises.</p>
           </div>
 
           <div class="card" style="margin-bottom:16px">
@@ -427,7 +446,7 @@
                 <div class="t-dot t-r"></div>
                 <div class="t-dot t-y"></div>
                 <div class="t-dot t-g"></div>
-                <span class="terminal-label">execution log</span>
+                <span class="terminal-label">log da coleta</span>
               </div>
               <div class="terminal" id="log-terminal">
                 <div class="log-line"><span class="log-ts">00:00</span><span class="log-info">Sistema inicializado.
@@ -446,7 +465,7 @@
               <div class="stat-card">
                 <div class="stat-label">Prefixos /24</div>
                 <div class="stat-value" id="res-pref24">—</div>
-                <div class="stat-sub">subnet /24 detectados</div>
+                <div class="stat-sub">blocos /24 detectados</div>
               </div>
               <div class="stat-card c-blue">
                 <div class="stat-label">Tipo de Rede</div>
@@ -480,7 +499,7 @@
             <div class="page-header-left">
               <div class="page-title">Analisador de Desvios BGP</div>
               <div class="page-desc">
-                Detecta possível mitigação DDoS via análise de AS-PATH
+                Mostra por quais redes uma rota passa até chegar ao prefixo
                 <span class="page-desc-tag">AS-PATH</span>
                 <span class="page-desc-tag">RIS Live</span>
               </div>
@@ -490,9 +509,9 @@
           <div class="explain-panel">
             <div>
               <span>O que faz</span>
-              <strong>Compara caminhos globais ate um prefixo</strong>
+              <strong>Mostra se o caminho da rota parece incomum</strong>
             </div>
-            <p>Consulta looking-glass do RIPE RIS, mede tamanho dos AS-PATHs e destaca diversidade alta de rotas, que pode indicar engenharia de trafego, mudanca operacional ou mitigacao.</p>
+            <p>AS-PATH é a sequência de ASNs no caminho da rota. Caminhos muito longos ou muito variados podem indicar mudança operacional, engenharia de tráfego ou mitigação DDoS.</p>
           </div>
 
           <div class="card" style="margin-bottom:16px">
@@ -522,11 +541,10 @@
                 <div class="t-dot t-r"></div>
                 <div class="t-dot t-y"></div>
                 <div class="t-dot t-g"></div>
-                <span class="terminal-label">analysis log</span>
+                <span class="terminal-label">log da análise</span>
               </div>
               <div class="terminal" id="log-analise">
-                <div class="log-line"><span class="log-ts">00:00</span><span class="log-info">Pronto para análise de
-                    AS-PATH...</span></div>
+                <div class="log-line"><span class="log-ts">00:00</span><span class="log-info">Pronto para analisar o caminho BGP do prefixo...</span></div>
               </div>
             </div>
           </div>
@@ -542,11 +560,11 @@
                 <div class="stat-value v-accent" id="an-saltos">—</div>
               </div>
               <div class="stat-card">
-                <div class="stat-label">Paths Únicos</div>
+                <div class="stat-label">Caminhos Únicos</div>
                 <div class="stat-value" id="an-unique">—</div>
               </div>
               <div class="stat-card">
-                <div class="stat-label">Total Paths</div>
+                <div class="stat-label">Total de Caminhos</div>
                 <div class="stat-value" id="an-total">—</div>
               </div>
             </div>
@@ -554,13 +572,13 @@
             <div class="grid g2" style="margin-bottom:16px">
               <div class="card">
                 <div class="card-header">
-                  <div class="card-title">ASNs mais frequentes no caminho</div>
+                  <div class="card-title">Redes mais frequentes no caminho</div>
                 </div>
                 <div class="card-inner" id="an-asn-freq"></div>
               </div>
               <div class="card">
                 <div class="card-header">
-                  <div class="card-title">Distribuição de Comprimento de Paths</div>
+                  <div class="card-title">Tamanho dos caminhos encontrados</div>
                 </div>
                 <div class="card-inner">
                   <div class="chart-wrap" style="height:170px">
@@ -572,7 +590,7 @@
 
             <div class="card">
               <div class="card-header">
-                <div class="card-title">AS-PATHs coletados (por RRC)</div>
+                <div class="card-title">Caminhos BGP coletados por observador RIPE</div>
               </div>
               <div class="card-inner">
                 <div class="path-wrap" id="path-display"></div>
@@ -589,7 +607,7 @@
           <div class="page-header">
             <div class="page-header-left">
               <div class="page-title">Mapa de Prefixos /24</div>
-              <div class="page-desc">Visualização de todos os prefixos /24 coletados</div>
+              <div class="page-desc">Lista dos blocos /24 encontrados na coleta</div>
             </div>
             <button class="btn btn-secondary btn-sm" onclick="exportarPrefixos()">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -603,9 +621,9 @@
           <div class="explain-panel">
             <div>
               <span>O que faz</span>
-              <strong>Mapa operacional dos /24 coletados</strong>
+              <strong>Lista os prefixos mais específicos</strong>
             </div>
-            <p>Lista os prefixos de granularidade /24, que sao os mais importantes para identificar MOAS, scrubbing e anuncios especificos durante ataques DDoS.</p>
+            <p>Um /24 é um bloco IPv4 pequeno e específico. Ele costuma aparecer em mitigação DDoS porque permite redirecionar só uma parte da rede.</p>
           </div>
 
           <div class="card" style="margin-bottom:16px">
@@ -667,7 +685,7 @@
             <div class="page-header-left">
               <div class="page-title">Relatório Final</div>
               <div class="page-desc">
-                Equivalente ao relatorio_bgp.csv gerado pelo main.py
+                Tabela final com os principais resultados da coleta
                 <span class="page-desc-tag">CSV Export</span>
               </div>
             </div>
@@ -691,9 +709,9 @@
           <div class="explain-panel">
             <div>
               <span>O que faz</span>
-              <strong>Consolida evidencias para entrega tecnica</strong>
+              <strong>Junta os dados principais em uma tabela</strong>
             </div>
-            <p>Transforma a coleta em tabela comparavel por operadora: volume de prefixos, proporcao de /24, tipo de rede, desvio de AS-PATH e media de saltos.</p>
+            <p>Mostra, por operadora, quantos prefixos foram encontrados, quantos são /24, se houve desvio suspeito e qual foi a média de saltos no caminho.</p>
           </div>
 
           <div class="alert alert-warn" id="relatorio-alert" style="display:none"></div>
@@ -737,10 +755,10 @@
             <div class="page-header-left">
               <div class="page-title">Base de Dados</div>
               <div class="page-desc">
-                API Node, MongoDB e transformacao analitica
+                Dados salvos pela API e prontos para exportação
                 <span class="page-desc-tag">Node API</span>
                 <span class="page-desc-tag">MongoDB</span>
-                <span class="page-desc-tag">KDD</span>
+                <span class="page-desc-tag">Análise</span>
               </div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -763,9 +781,9 @@
           <div class="explain-panel">
             <div>
               <span>O que faz</span>
-              <strong>Centraliza os dados em uma API portavel</strong>
+              <strong>Guarda tudo em um lugar só</strong>
             </div>
-            <p>A API Node persiste os dados em MongoDB, cria indices, guarda historico de eventos e exporta snapshot JSON ou dataset analitico para mineracao.</p>
+            <p>A API salva os dados no MongoDB ou no arquivo local de desenvolvimento. Depois você pode baixar backup JSON ou exportar a tabela de análise.</p>
           </div>
 
           <div class="grid g4" style="margin-bottom:16px">
@@ -794,20 +812,20 @@
           <div class="grid g21" style="margin-bottom:16px">
             <div class="card">
               <div class="card-header">
-                <div class="card-title">API de Transformacao</div>
+                <div class="card-title">Ações da base de dados</div>
                 <span class="tag">BGP_DB</span>
               </div>
               <div class="card-inner">
                 <div class="data-actions">
                   <button class="btn btn-secondary btn-sm" onclick="exportarSnapshotJSON()">Snapshot JSON</button>
-                  <button class="btn btn-secondary btn-sm" onclick="exportarWarehouseJSON()">Dataset KDD</button>
+                  <button class="btn btn-secondary btn-sm" onclick="exportarWarehouseJSON()">Tabela de análise</button>
                   <button class="btn btn-secondary btn-sm" onclick="migrarBancoLegado()">Migrar navegador legado</button>
                 </div>
                 <div class="api-list">
-                  <div><strong>Coleta</strong><span>salvarOperadora(), salvarPrefixos() e registrarEvento()</span></div>
-                  <div><strong>Analise</strong><span>salvarAnalise(), listarAnalises() e transformarWarehouse()</span></div>
-                  <div><strong>Mitigacao</strong><span>salvarMitigacao(), buscarMitigacoesPorPrefixo() e exportarJSON()</span></div>
-                  <div><strong>Portabilidade</strong><span>exportarJSON(), importarJSON() e migrarIndexedDBLegado()</span></div>
+                  <div><strong>Coleta</strong><span>Guarda operadoras, prefixos e eventos da execução.</span></div>
+                  <div><strong>Análise</strong><span>Salva resultados do caminho BGP e monta a tabela consolidada.</span></div>
+                  <div><strong>Mitigação</strong><span>Guarda os prefixos com MOAS e os ASNs que aparecem como mitigadores.</span></div>
+                  <div><strong>Exportação</strong><span>Baixa backup JSON, tabela de análise e dados migrados do navegador antigo.</span></div>
                 </div>
               </div>
             </div>
@@ -828,7 +846,7 @@
           <div class="grid g2">
             <div class="card">
               <div class="card-header">
-                <div class="card-title">Preview do Dataset KDD</div>
+                <div class="card-title">Prévia da tabela de análise</div>
                 <span class="tag">Top risco</span>
               </div>
               <div class="table-wrap" style="border:none;border-radius:0">
@@ -873,16 +891,16 @@
           <div class="page-header">
             <div class="page-header-left">
               <div class="page-title">Análise Comparativa</div>
-              <div class="page-desc">Compare métricas entre as operadoras analisadas</div>
+              <div class="page-desc">Compare as operadoras coletadas lado a lado</div>
             </div>
           </div>
 
           <div class="explain-panel">
             <div>
               <span>O que faz</span>
-              <strong>Mostra diferencas entre operadoras</strong>
+              <strong>Ajuda a comparar volume, /24 e risco</strong>
             </div>
-            <p>Usa graficos de barras, radar, dispersao e heatmap para comparar volume de anuncios, concentracao de /24, saltos medios e risco relativo.</p>
+            <p>Os gráficos mostram quais operadoras anunciam mais prefixos, quais têm mais /24 e quais tiveram caminhos mais longos ou sinais de risco.</p>
           </div>
 
           <div class="tabs">
@@ -893,7 +911,7 @@
 
           <div class="card" id="comp-bar-panel" style="margin-bottom:16px">
             <div class="card-header">
-              <div class="card-title">Comparativo: Total de Prefixos por Operadora</div>
+              <div class="card-title">Total de prefixos por operadora</div>
             </div>
             <div class="card-inner">
               <div class="chart-wrap" style="height:300px">
@@ -904,7 +922,7 @@
 
           <div class="card" id="comp-radar-panel" style="display:none;margin-bottom:16px">
             <div class="card-header">
-              <div class="card-title">Radar Comparativo (normalizado)</div>
+              <div class="card-title">Comparação geral em escala comum</div>
             </div>
             <div class="card-inner">
               <div class="chart-wrap" style="height:360px">
@@ -915,7 +933,7 @@
 
           <div class="card" id="comp-scatter-panel" style="display:none;margin-bottom:16px">
             <div class="card-header">
-              <div class="card-title">Dispersão: Prefixos /24 vs Média de Saltos</div>
+              <div class="card-title">Relação entre /24 e média de saltos</div>
             </div>
             <div class="card-inner">
               <div class="chart-wrap" style="height:300px">
@@ -926,8 +944,8 @@
 
           <div class="card">
             <div class="card-header">
-              <div class="card-title">Heatmap de Risco por Operadora</div>
-              <span class="tag">Intensity Map</span>
+              <div class="card-title">Mapa de risco por operadora</div>
+              <span class="tag">Resumo visual</span>
             </div>
             <div class="card-inner" id="heatmap-container">
               <div class="empty">
@@ -949,7 +967,7 @@
             <div class="page-header-left">
               <div class="page-title">Análise de Mitigação DDoS</div>
               <div class="page-desc">
-                Detecta MOAS, scrubbing ativo e redundância de prefixos /24
+                Procura prefixos com mais de uma origem e possíveis mitigadores DDoS
                 <span class="page-desc-tag">MOAS</span>
                 <span class="page-desc-tag">Multi-Origin</span>
                 <span class="page-desc-tag">RIPE Stat</span>
@@ -966,35 +984,35 @@
           <div class="explain-panel">
             <div>
               <span>O que faz</span>
-              <strong>Encontra co-anuncios suspeitos em /24</strong>
+              <strong>Encontra prefixos anunciados por mais de uma rede</strong>
             </div>
-            <p>Verifica se um prefixo coletado esta sendo originado por outro ASN, identifica possiveis provedores de scrubbing e mede se existe redundancia de upstreams.</p>
+            <p>Quando um /24 aparece com outro ASN de origem, o sistema marca como MOAS. Isso pode indicar mitigação DDoS, scrubbing ou uma mudança de roteamento que merece investigação.</p>
           </div>
 
           <!-- Cards de resumo -->
           <div class="grid g4" style="margin-bottom:16px">
             <div class="stat-card c-danger">
-              <div class="stat-label">ASNs Mitigadores</div>
+              <div class="stat-label">Redes Mitigadoras</div>
               <div class="stat-value v-danger" id="mit-total-moas">—</div>
-              <div class="stat-sub">fazendo scrubbing</div>
+              <div class="stat-sub">ASNs que aparecem ajudando</div>
               <div class="stat-icon">ASN</div>
             </div>
             <div class="stat-card c-danger">
-              <div class="stat-label">Prefixos /24 em MOAS</div>
+              <div class="stat-label">Prefixos com 2+ origens</div>
               <div class="stat-value v-danger" id="mit-total-ativo">—</div>
-              <div class="stat-sub">co-anunciados por outro ASN</div>
+              <div class="stat-sub">MOAS detectado</div>
               <div class="stat-icon">MOAS</div>
             </div>
             <div class="stat-card c-accent">
-              <div class="stat-label">Com Redundância</div>
+              <div class="stat-label">Com 2+ caminhos</div>
               <div class="stat-value v-accent" id="mit-total-redundante">—</div>
-              <div class="stat-sub">2+ paths de uplink</div>
+              <div class="stat-sub">mais de um upstream</div>
               <div class="stat-icon">2+</div>
             </div>
             <div class="stat-card">
-              <div class="stat-label">Sem Redundância</div>
+              <div class="stat-label">Com 1 caminho</div>
               <div class="stat-value" id="mit-total-sem-red" style="color:var(--warn)">—</div>
-              <div class="stat-sub">ponto único de falha</div>
+              <div class="stat-sub">maior ponto de atenção</div>
               <div class="stat-icon">1x</div>
             </div>
           </div>
@@ -1005,21 +1023,21 @@
               <circle cx="8" cy="8" r="7"/><path d="M8 7v5M8 5v.5"/>
             </svg>
             <div style="font-size:12px;font-family:var(--mono);line-height:1.6">
-              <strong>Como funciona:</strong> Quando uma operadora sofre ataque DDoS, ela contrata mitigação. O serviço de scrubbing começa a <strong>co-anunciar os prefixos /24 da vítima</strong> — resultado: o mesmo /24 passa a ter 2+ ASNs de origem (<em>MOAS</em>). Esta análise responde: <strong>quais ASNs estão fazendo mitigação?</strong> Quantos /24 co-anunciam? Esses /24 têm múltiplos upstreams (redundância) ou são ponto único de falha?
+              <strong>Como ler esta tela:</strong> em um ataque DDoS, a operadora pode enviar o tráfego para um provedor de mitigação. Esse provedor faz scrubbing, ou seja, limpa o tráfego ruim e entrega o tráfego válido. Para isso, o mesmo prefixo /24 pode aparecer anunciado por mais de um ASN. Esse caso se chama MOAS. A tabela mostra quem apareceu como possível mitigador e se o prefixo tem mais de um caminho de saída.
             </div>
           </div>
 
-          <!-- Configuração do scan -->
+          <!-- Configuração da análise -->
           <div class="card" style="margin-bottom:16px">
             <div class="card-header">
-              <div class="card-title">Configuração do Scan</div>
+              <div class="card-title">Configuração da análise</div>
             </div>
             <div class="card-inner">
               <div class="form-row">
                 <div class="form-group" style="flex:3">
-                  <label class="form-label">Prefixo /24 avulso (opcional — deixe vazio para analisar TODOS os coletados)</label>
+                  <label class="form-label">Prefixo /24 específico (opcional - vazio analisa todos)</label>
                   <input type="text" id="inp-mit-prefix" class="form-control"
-                    placeholder="Ex: 177.71.128.0/24  — vazio = todos os prefixos coletados"/>
+                    placeholder="Ex: 177.71.128.0/24 - vazio = todos os prefixos coletados"/>
                 </div>
                 <div class="form-group" style="flex:1">
                   <label class="form-label">Paralelismo</label>
@@ -1070,12 +1088,12 @@
             <div style="border-top:1px solid var(--border)">
               <div class="terminal-bar">
                 <div class="t-dot t-r"></div><div class="t-dot t-y"></div><div class="t-dot t-g"></div>
-                <span class="terminal-label">mitigation scanner — todos os prefixos</span>
+                <span class="terminal-label">analisador de mitigação - todos os prefixos</span>
               </div>
               <div class="terminal" id="log-mitigacao" style="max-height:180px">
                 <div class="log-line">
                   <span class="log-ts">00:00</span>
-                  <span class="log-info">Pronto. Clique em "Analisar Todos" para escanear 100% dos prefixos /24 coletados.</span>
+                  <span class="log-info">Pronto. Clique em "Analisar Todos" para verificar os prefixos /24 coletados.</span>
                 </div>
               </div>
             </div>
@@ -1084,10 +1102,11 @@
           <!-- Provedores de mitigação conhecidos -->
           <div class="card" style="margin-bottom:16px">
             <div class="card-header">
-              <div class="card-title">Provedores de Scrubbing / Mitigação Conhecidos</div>
-              <span class="tag">Referência</span>
+              <div class="card-title">Provedores conhecidos de limpeza DDoS</div>
+              <span class="tag">Scrubbing</span>
             </div>
             <div class="card-inner">
+              <p class="helper-copy">Scrubbing é o serviço que filtra o tráfego de ataque antes de devolver o tráfego limpo para a operadora.</p>
               <div id="mit-providers-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
             </div>
           </div>
@@ -1096,32 +1115,32 @@
           <div class="card" style="margin-bottom:16px">
             <div class="card-header">
               <div class="card-title">
-                ASNs Fazendo Mitigação (MOAS)
+                Possíveis redes mitigadoras
                 — <span id="mit-moas-count" style="color:var(--danger)">0</span> mitigador(es) detectado(s)
               </div>
-              <span class="tag">Quem está fazendo scrubbing?</span>
+              <span class="tag">MOAS encontrado</span>
             </div>
             <div class="table-wrap" style="border:none;border-radius:0">
               <table>
                 <thead>
                   <tr>
-                    <th>ASN Mitigador</th>
+                    <th>Rede Mitigadora</th>
                     <th>Nome / Tipo</th>
-                    <th>/24 em MOAS</th>
-                    <th>/24 Totais Anunciados</th>
-                    <th>Vítimas (Operadoras)</th>
-                    <th>Com Redund.</th>
-                    <th>Sem Redund.</th>
-                    <th>% Redundância</th>
+                    <th>/24 com 2+ origens</th>
+                    <th>/24 totais</th>
+                    <th>Operadoras afetadas</th>
+                    <th>Com 2+ caminhos</th>
+                    <th>Com 1 caminho</th>
+                    <th>% com 2+ caminhos</th>
                     <th>Prefixos</th>
                   </tr>
                 </thead>
                 <tbody id="tabela-mitigacao">
                   <tr>
-                    <td colspan="8">
+                    <td colspan="9">
                       <div class="empty">
                         <div class="empty-icon">MOAS</div>
-                        <div class="empty-text">Execute o scan para detectar mitigação ativa</div>
+                        <div class="empty-text">Execute a análise para procurar possíveis mitigadores</div>
                       </div>
                     </td>
                   </tr>
@@ -1133,21 +1152,21 @@
           <!-- Tabela de redundância por operadora -->
           <div class="card">
             <div class="card-header">
-              <div class="card-title">Operadoras Possivelmente sob Ataque</div>
-              <span class="tag">Vítimas detectadas por MOAS</span>
+              <div class="card-title">Operadoras que merecem investigação</div>
+              <span class="tag">Prefixos com MOAS</span>
             </div>
             <div class="table-wrap" style="border:none;border-radius:0">
               <table>
                 <thead>
                   <tr>
-                    <th>Operadora (Vítima)</th>
+                    <th>Operadora</th>
                     <th>ASN</th>
-                    <th>/24 em MOAS</th>
+                    <th>/24 com 2+ origens</th>
                     <th>Mitigado por</th>
-                    <th>Com Redundância</th>
-                    <th>Sem Redundância</th>
+                    <th>Com 2+ caminhos</th>
+                    <th>Com 1 caminho</th>
                     <th>Status</th>
-                    <th>% Redundância</th>
+                    <th>% com 2+ caminhos</th>
                   </tr>
                 </thead>
                 <tbody id="tabela-redundancia">

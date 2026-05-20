@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════
-//  OPERADORAS — ~100 provedores do Maranhão / Brasil
+//  OPERADORAS — 150 provedores do Maranhão / Brasil
 //  ASNs verificados via RIPE Stat, PeeringDB e registro.br
 // ══════════════════════════════════════════════
 const OPERADORAS = {
@@ -589,7 +589,7 @@ async function iniciarMitigacaoScan() {
 
   var total = fila.length;
   log(logId, 'Fase 1 — verificando ' + total + ' prefixos /24 (lotes de ' + batchSize + ')...', 'hi');
-  log(logId, 'Objetivo: encontrar quais ASNs estao fazendo mitigacao e quantos /24 anunciam.', 'info');
+  log(logId, 'Objetivo: encontrar prefixos com 2+ origens (MOAS) e os ASNs que podem estar mitigando DDoS.', 'info');
 
   // ── Fase 2: consultar prefix-overview em lotes ────────────────────────────
   var feitos = 0;
@@ -637,9 +637,9 @@ async function iniciarMitigacaoScan() {
           return SCRUBBING_PROVIDERS[a] ? SCRUBBING_PROVIDERS[a].nome : 'AS' + a;
         }).join(', ');
         log(logId,
-          'ALERTA MOAS: ' + res.prefixo + ' (' + res.nome_dono + ')' +
-          ' → mitigado por: ' + mitNomes +
-          ' | redundancia: ' + (res.redundante ? 'SIM (' + res.n_upstreams + ' paths)' : 'NAO'),
+          'MOAS detectado: ' + res.prefixo + ' (' + res.nome_dono + ')' +
+          ' | possivel mitigador: ' + mitNomes +
+          ' | caminhos: ' + (res.redundante ? '2+ (' + res.n_upstreams + ')' : '1'),
           'warn');
       }
     });
@@ -687,22 +687,22 @@ async function iniciarMitigacaoScan() {
 
   log(logId, '━━━ Analise concluida ━━━', 'hi');
   log(logId,
-    'Prefixos com MOAS: ' + nPref +
-    ' | Mitigadores ativos: ' + nMit +
-    ' | Com redundancia: ' + nRed +
-    ' | Sem redundancia: ' + (nPref - nRed),
+    'Prefixos com 2+ origens (MOAS): ' + nPref +
+    ' | Possiveis mitigadores: ' + nMit +
+    ' | Com 2+ caminhos: ' + nRed +
+    ' | Com 1 caminho: ' + (nPref - nRed),
     'ok');
 
   if (nMit === 0) {
-    log(logId, 'Nenhum prefixo com mitigacao ativa detectado no momento.', 'ok');
+    log(logId, 'Nenhum prefixo com sinal de mitigacao foi detectado no momento.', 'ok');
   } else {
     mitKeys.forEach(function(a) {
       var m = mitMitigadores[a];
       log(logId,
         '  → ' + m.nome + ' (AS' + a + ') ' +
-        '| /24 em MOAS: ' + m.prefixos.length +
+        '| /24 com 2+ origens: ' + m.prefixos.length +
         ' | /24 totais anunciados: ' + (m.total_24_anunciados || '?') +
-        ' | vitimas: ' + m.vitimas.join(', '),
+        ' | operadoras afetadas: ' + m.vitimas.join(', '),
         'warn');
     });
   }
@@ -768,7 +768,7 @@ function renderTabelaMitigacao() {
   var keys = Object.keys(mitMitigadores);
   if (!keys.length) {
     tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">◌</div>' +
-      '<div class="empty-text">Nenhum ASN de mitigação detectado até agora...</div></div></td></tr>';
+      '<div class="empty-text">Nenhuma rede mitigadora detectada até agora...</div></div></td></tr>';
     return;
   }
 
@@ -797,7 +797,7 @@ function renderTabelaMitigacao() {
       // Nome
       '<td class="td-name">' +
         (isKnown
-          ? '<span class="badge badge-danger" style="margin-right:4px">Scrubber</span>'
+          ? '<span class="badge badge-danger" style="margin-right:4px">Scrubbing</span>'
           : '<span class="badge badge-warn" style="margin-right:4px">MOAS</span>') +
         m.nome +
       '</td>' +
@@ -865,7 +865,7 @@ function renderTabelaRedundancia() {
 
   if (!vitimas.length) {
     tbody.innerHTML = '<tr><td colspan="8"><div class="empty"><div class="empty-icon">◌</div>' +
-      '<div class="empty-text">Nenhuma operadora com prefixos em mitigação detectada</div></div></td></tr>';
+      '<div class="empty-text">Nenhuma operadora com prefixos em MOAS detectada</div></div></td></tr>';
     return;
   }
 
@@ -903,7 +903,7 @@ function renderTabelaRedundancia() {
 
 // ── Exportar CSV ─────────────────────────────────────────────────────────────
 function exportarMitigacao() {
-  if (!mitResultados.length) { alert('Nenhum dado. Execute o scan primeiro.'); return; }
+  if (!mitResultados.length) { alert('Nenhum dado. Execute a análise primeiro.'); return; }
   var csv = 'Prefixo,Dono (Vitima),ASN Dono,Mitigadores (ASN),Mitigadores (Nome),Com Redundancia,Qtd Upstreams\n';
   mitResultados.forEach(function(r) {
     var mitNomes = r.mitigadores.map(function(a) {
@@ -1122,8 +1122,8 @@ async function coletarASN(asn, nome, logId) {
     }
     state.analises[asn] = detectarDesvio(caminhos);
     var a = state.analises[asn];
-    log(logId, 'OK AS-PATH: media ' + a.media_saltos + ' saltos | ' + a.paths_unicos + ' unicos', 'ok');
-    if (a.desvio_suspeito) log(logId, 'Desvio suspeito detectado!', 'warn');
+    log(logId, 'OK caminho BGP: media ' + a.media_saltos + ' saltos | ' + a.paths_unicos + ' caminhos unicos', 'ok');
+    if (a.desvio_suspeito) log(logId, 'Caminho incomum detectado. Vale investigar.', 'warn');
   }
 
   // Persistir na API
@@ -1136,15 +1136,15 @@ async function coletarASN(asn, nome, logId) {
   document.getElementById('res-tipo').textContent = pdbNetType;
 
   document.getElementById('card-asn-info').innerHTML =
-    '<div class="card-header"><div class="card-title">Informacoes do ASN</div></div>' +
+    '<div class="card-header"><div class="card-title">Informacoes da rede</div></div>' +
     '<div class="card-inner"><div class="kv-grid">' +
     '<div class="kv-item"><div class="kv-k">ASN</div><div class="kv-v">AS' + asn + '</div></div>' +
-    '<div class="kv-item"><div class="kv-k">Holder</div><div class="kv-v" style="font-size:11px">' + holder.substring(0,28) + (holder.length>28?'...':'') + '</div></div>' +
+    '<div class="kv-item"><div class="kv-k">Nome oficial</div><div class="kv-v" style="font-size:11px">' + holder.substring(0,28) + (holder.length>28?'...':'') + '</div></div>' +
     '<div class="kv-item"><div class="kv-k">Website</div><div class="kv-v">' + (pdbWebsite !== '--' ? '<a href="' + pdbWebsite + '" target="_blank" style="color:var(--blue);text-decoration:none">' + pdbWebsite.substring(0,22) + '</a>' : '--') + '</div></div>' +
     '<div class="kv-item"><div class="kv-k">Prefixos IPv4</div><div class="kv-v">' + prefixos.length + '</div></div>' +
     '</div><div class="divider"></div>' +
     '<div class="kv-k" style="margin-bottom:8px">Cobertura</div>' +
-    '<div class="progress-wrap"><div class="progress-info"><span class="progress-label">Presenca Principal</span><span class="progress-val">100%</span></div>' +
+    '<div class="progress-wrap"><div class="progress-info"><span class="progress-label">Coleta realizada</span><span class="progress-val">100%</span></div>' +
     '<div class="progress-bar"><div class="progress-fill" style="width:100%;background:var(--accent)"></div></div></div></div>';
 
   document.getElementById('card-pdb-info').innerHTML =
@@ -1221,11 +1221,11 @@ async function analisarPrefixo() {
       });
     });
   }
-  log('log-analise', 'OK ' + caminhos.length + ' paths de ' + new Set(caminhos.map(function(c){ return c.rrc; })).size + ' RRCs', 'ok');
+  log('log-analise', 'OK ' + caminhos.length + ' caminhos encontrados em ' + new Set(caminhos.map(function(c){ return c.rrc; })).size + ' observadores RIPE', 'ok');
   var analise = detectarDesvio(caminhos);
-  log('log-analise', 'OK Media saltos: ' + analise.media_saltos + ' | Paths unicos: ' + analise.paths_unicos, 'ok');
-  if (analise.desvio_suspeito) { log('log-analise','DESVIO DETECTADO','warn'); }
-  else { log('log-analise','Sem desvio significativo','ok'); }
+  log('log-analise', 'OK media de saltos: ' + analise.media_saltos + ' | caminhos unicos: ' + analise.paths_unicos, 'ok');
+  if (analise.desvio_suspeito) { log('log-analise','Caminho incomum detectado','warn'); }
+  else { log('log-analise','Caminho dentro do esperado','ok'); }
 
   document.getElementById('analise-resultado').style.display = '';
   document.getElementById('an-desvio').innerHTML = analise.desvio_suspeito
@@ -1248,7 +1248,7 @@ async function analisarPrefixo() {
   if (window.Chart) {
     if (chartPaths) chartPaths.destroy();
     chartPaths = new Chart(document.getElementById('chartPaths'), {
-      type:'bar', data:{ labels:lbls.map(function(l){return l+' saltos';}), datasets:[{label:'Paths',data:vals,backgroundColor:'#375dfb22',borderColor:'#375dfb',borderWidth:1.5,borderRadius:6}]},
+      type:'bar', data:{ labels:lbls.map(function(l){return l+' saltos';}), datasets:[{label:'Caminhos',data:vals,backgroundColor:'#375dfb22',borderColor:'#375dfb',borderWidth:1.5,borderRadius:6}]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(123,136,152,0.12)'}},x:{grid:{display:false}}}}
     });
   }
@@ -1292,7 +1292,7 @@ function atualizarDashboard() {
   }
   var pal = ['#375dfb','#ffb454','#6e56cf','#d92d52','#2563eb','#64748b','#c73868','#b86b00','#5ea1ff','#111827'];
   sl.innerHTML = '<div class="table-wrap" style="border:none;border-radius:0"><table>' +
-    '<thead><tr><th>Operadora</th><th>ASN</th><th>Prefixos</th><th>/24</th><th>Desvio</th><th>Med. Saltos</th><th>Tipo</th></tr></thead>' +
+    '<thead><tr><th>Operadora</th><th>ASN</th><th>Prefixos</th><th>/24</th><th>Caminho incomum</th><th>Média saltos</th><th>Tipo</th></tr></thead>' +
     '<tbody>' + keys.map(function(asn){
       var d=state.collected[asn], a=state.analises[asn], p24=(state.prefixos24[asn]||[]).length;
       return '<tr><td class="td-name">'+d.nome_op+'</td>'+
@@ -1434,7 +1434,7 @@ function renderDados() {
         dataMetric('Prefixos', stats.prefixos) +
         dataMetric('/24', stats.prefixos24) +
         dataMetric('Analises', stats.analises) +
-        dataMetric('MOAS', stats.mitigacao) +
+        dataMetric('MOAS (2+ origens)', stats.mitigacao) +
         dataMetric('Eventos', stats.eventos) +
         '</div>' +
         '<div class="data-foot">Atualizado: ' + escapeHTML(stats.atualizado_em || 'sem alteracoes') + '</div>';
@@ -1459,7 +1459,7 @@ function renderWarehousePreview(warehouse) {
   }).slice(0, 8);
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="5"><div class="empty"><div class="empty-icon">--</div><div class="empty-text">Colete dados para gerar o dataset KDD</div></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty"><div class="empty-icon">--</div><div class="empty-text">Colete dados para gerar a tabela de analise</div></div></td></tr>';
     return;
   }
 
@@ -1682,7 +1682,7 @@ function iniciarAplicacao() {
           '→ Banco: ' + stats.operadoras + ' ops | ' +
           stats.prefixos + ' prefixos | ' +
           stats.prefixos24 + ' /24 | ' +
-          stats.mitigacao + ' eventos MOAS',
+          stats.mitigacao + ' eventos MOAS (2+ origens)',
           'data');
       });
     } else {
