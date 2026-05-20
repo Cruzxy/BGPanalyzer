@@ -593,6 +593,7 @@ async function main() {
   });
   ['db.js', 'script.js', 'style.css'].forEach((asset) => {
     app.get('/' + asset, (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
       res.sendFile(path.join(ROOT_DIR, asset));
     });
   });

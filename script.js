@@ -234,10 +234,14 @@ let state = { collected: {}, prefixos24: {}, analises: {}, coletando: false };
 let chartPrefixos = null, chartDist = null, chartPaths = null,
     chartComp1 = null, chartRadar = null, chartScatter = null;
 
-Chart.defaults.color = '#526071';
-Chart.defaults.borderColor = 'rgba(123,136,152,0.16)';
-Chart.defaults.font.family = "'JetBrains Mono', monospace";
-Chart.defaults.font.size = 11;
+if (window.Chart) {
+  Chart.defaults.color = '#526071';
+  Chart.defaults.borderColor = 'rgba(123,136,152,0.16)';
+  Chart.defaults.font.family = "'JetBrains Mono', monospace";
+  Chart.defaults.font.size = 11;
+} else {
+  console.warn('[BGP] Chart.js indisponivel; graficos serao ignorados ate a biblioteca carregar.');
+}
 
 // ══════════════════════════════════════════════
 //  BANCO DE DADOS — API Node + MongoDB (BGP_DB)
@@ -373,6 +377,7 @@ function navigate(el, page) {
   if (page === 'comparativo') renderComparativo();
   if (page === 'prefixos') filtrarPrefixos();
   if (page === 'mitigacao') iniciarPaginaMitigacao();
+  if (page === 'coletor') popularSelectOperadoras();
 }
 
 // ══════════════════════════════════════════════
@@ -943,24 +948,75 @@ function downloadBlob(blob, filename) {
 // ══════════════════════════════════════════════
 //  SELECT HELPERS
 // ══════════════════════════════════════════════
+function normalizarAsn(asn) {
+  return String(asn || '').replace(/^AS/i, '').trim();
+}
+
+function criarOptionOperadora(nome, asn) {
+  var asnNorm = normalizarAsn(asn);
+  var opt = document.createElement('option');
+  opt.value = asnNorm;
+  opt.textContent = nome + ' (AS' + asnNorm + ')';
+  opt.dataset.nome = nome;
+  return opt;
+}
+
 function popularSelectOperadoras() {
   var sel = document.getElementById('sel-operadora');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">-- Selecione uma operadora --</option>';
+  if (!sel) return 0;
+  var anterior = sel.value;
+  var adicionados = new Set();
+  var total = 0;
+  sel.innerHTML = '';
+
+  var placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '-- Selecione uma operadora --';
+  sel.appendChild(placeholder);
+
   Object.entries(GRUPOS_OPERADORAS).forEach(function(entry) {
     var grupo = entry[0], nomes = entry[1];
-    if (!nomes) return;
+    if (!Array.isArray(nomes) || nomes.length === 0) return;
     var og = document.createElement('optgroup');
     og.label = grupo;
     nomes.forEach(function(nome) {
-      if (!OPERADORAS[nome]) return;
-      var opt = document.createElement('option');
-      opt.value = OPERADORAS[nome];
-      opt.textContent = nome + ' (AS' + OPERADORAS[nome] + ')';
-      og.appendChild(opt);
+      var asn = OPERADORAS[nome];
+      var key = normalizarAsn(asn);
+      if (!key || adicionados.has(key)) return;
+      og.appendChild(criarOptionOperadora(nome, key));
+      adicionados.add(key);
+      total++;
     });
-    sel.appendChild(og);
+    if (og.children.length) sel.appendChild(og);
   });
+
+  var extras = Object.entries(OPERADORAS).filter(function(entry) {
+    return !adicionados.has(normalizarAsn(entry[1]));
+  }).sort(function(a, b) {
+    return a[0].localeCompare(b[0], 'pt-BR');
+  });
+
+  if (extras.length) {
+    var ogExtra = document.createElement('optgroup');
+    ogExtra.label = total > 0 ? 'Outras operadoras' : 'Operadoras';
+    extras.forEach(function(entry) {
+      var nome = entry[0], asn = normalizarAsn(entry[1]);
+      if (!asn || adicionados.has(asn)) return;
+      ogExtra.appendChild(criarOptionOperadora(nome, asn));
+      adicionados.add(asn);
+      total++;
+    });
+    if (ogExtra.children.length) sel.appendChild(ogExtra);
+  }
+
+  placeholder.textContent = total
+    ? '-- Selecione uma operadora (' + total + ' disponiveis) --'
+    : '-- Nenhuma operadora cadastrada --';
+  sel.disabled = total === 0;
+  if (anterior && Array.prototype.some.call(sel.options, function(opt) { return opt.value === anterior; })) {
+    sel.value = anterior;
+  }
+  return total;
 }
 
 function popularSelectFiltro() {
@@ -1189,11 +1245,13 @@ async function analisarPrefixo() {
   caminhos.forEach(function(c){ var l=c.path.length; comp[l]=(comp[l]||0)+1; });
   var lbls = Object.keys(comp).sort(function(a,b){return a-b;});
   var vals = lbls.map(function(l){return comp[l];});
-  if (chartPaths) chartPaths.destroy();
-  chartPaths = new Chart(document.getElementById('chartPaths'), {
-    type:'bar', data:{ labels:lbls.map(function(l){return l+' saltos';}), datasets:[{label:'Paths',data:vals,backgroundColor:'#375dfb22',borderColor:'#375dfb',borderWidth:1.5,borderRadius:6}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(123,136,152,0.12)'}},x:{grid:{display:false}}}}
-  });
+  if (window.Chart) {
+    if (chartPaths) chartPaths.destroy();
+    chartPaths = new Chart(document.getElementById('chartPaths'), {
+      type:'bar', data:{ labels:lbls.map(function(l){return l+' saltos';}), datasets:[{label:'Paths',data:vals,backgroundColor:'#375dfb22',borderColor:'#375dfb',borderWidth:1.5,borderRadius:6}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(123,136,152,0.12)'}},x:{grid:{display:false}}}}
+    });
+  }
 
   var pd = document.getElementById('path-display'); pd.innerHTML='';
   caminhos.slice(0,30).forEach(function(c){
@@ -1251,6 +1309,7 @@ function atualizarDashboard() {
   var p24s=keys.map(function(asn){return (state.prefixos24[asn]||[]).length;});
   var palArr=keys.map(function(_,i){return pal[i%pal.length];});
 
+  if (!window.Chart) return;
   if(chartPrefixos) chartPrefixos.destroy();
   chartPrefixos = new Chart(document.getElementById('chartPrefixos'),{type:'bar',
     data:{labels:ops,datasets:[
@@ -1516,7 +1575,7 @@ function renderComparativo(){
   var pal=['#375dfb','#ffb454','#6e56cf','#d92d52','#2563eb','#64748b','#c73868','#b86b00','#5ea1ff','#111827'];
   var palArr=keys.map(function(_,i){return pal[i%pal.length];});
 
-  if(activeTab==='bar'){
+  if(window.Chart && activeTab==='bar'){
     if(chartComp1) chartComp1.destroy();
     chartComp1=new Chart(document.getElementById('chartComp1'),{type:'bar',
       data:{labels:ops,datasets:[
@@ -1527,7 +1586,7 @@ function renderComparativo(){
         scales:{y:{beginAtZero:true,grid:{color:'rgba(123,136,152,0.12)'}},x:{grid:{display:false}}}}
     });
   }
-  if(activeTab==='radar'){
+  if(window.Chart && activeTab==='radar'){
     var maxP=Math.max.apply(null,prefs.concat([1])),maxP24=Math.max.apply(null,p24s.concat([1])),maxS=Math.max.apply(null,saltos.concat([1]));
     if(chartRadar) chartRadar.destroy();
     chartRadar=new Chart(document.getElementById('chartRadar'),{type:'radar',
@@ -1543,7 +1602,7 @@ function renderComparativo(){
         plugins:{legend:{labels:{padding:14,usePointStyle:true,pointStyle:'circle'}}}}
     });
   }
-  if(activeTab==='scatter'){
+  if(window.Chart && activeTab==='scatter'){
     if(chartScatter) chartScatter.destroy();
     chartScatter=new Chart(document.getElementById('chartScatter'),{type:'scatter',
       data:{datasets:keys.map(function(asn,i){return {label:ops[i],data:[{x:p24s[i],y:saltos[i]}],backgroundColor:palArr[i]+'cc',pointRadius:12,pointHoverRadius:16};})},
@@ -1576,22 +1635,35 @@ function renderHeatmap(keys,ops,prefs,p24s,saltos){
 // ══════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════
-window.addEventListener('DOMContentLoaded', function() {
+var appInicializado = false;
+
+function iniciarAplicacao() {
+  if (appInicializado) return;
+  appInicializado = true;
+
   popularSelectOperadoras();
 
   var totalEl = document.getElementById('dash-total-ops');
   if (totalEl) totalEl.textContent = Object.keys(OPERADORAS).length;
 
-  chartPrefixos = new Chart(document.getElementById('chartPrefixos'), {
-    type: 'bar',
-    data: { labels: ['Aguardando'], datasets: [{ label: 'Prefixos', data: [0], backgroundColor: 'rgba(55,93,251,0.10)', borderColor: 'rgba(55,93,251,0.24)', borderWidth: 1, borderRadius: 6 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(123,136,152,0.12)' } }, x: { grid: { display: false } } } }
-  });
-  chartDist = new Chart(document.getElementById('chartDist'), {
-    type: 'doughnut',
-    data: { labels: ['Aguardando'], datasets: [{ data: [1], backgroundColor: ['rgba(55,93,251,0.10)'], borderWidth: 0 }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { labels: { color: '#7b8898', font: { size: 10 } } } } }
-  });
+  if (window.Chart) {
+    var chartPrefixosEl = document.getElementById('chartPrefixos');
+    var chartDistEl = document.getElementById('chartDist');
+    if (chartPrefixosEl) {
+      chartPrefixos = new Chart(chartPrefixosEl, {
+        type: 'bar',
+        data: { labels: ['Aguardando'], datasets: [{ label: 'Prefixos', data: [0], backgroundColor: 'rgba(55,93,251,0.10)', borderColor: 'rgba(55,93,251,0.24)', borderWidth: 1, borderRadius: 6 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(123,136,152,0.12)' } }, x: { grid: { display: false } } } }
+      });
+    }
+    if (chartDistEl) {
+      chartDist = new Chart(chartDistEl, {
+        type: 'doughnut',
+        data: { labels: ['Aguardando'], datasets: [{ data: [1], backgroundColor: ['rgba(55,93,251,0.10)'], borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { labels: { color: '#7b8898', font: { size: 10 } } } } }
+      });
+    }
+  }
 
   // ── Carregar estado da API ───────────────────────────────────────────────
   dbCarregar().then(function(nCarregados) {
@@ -1622,4 +1694,17 @@ window.addEventListener('DOMContentLoaded', function() {
   }).catch(function(e) {
     log('log-terminal', '✗ Erro ao conectar a API: ' + e, 'warn');
   });
+}
+
+function executarQuandoDOMPronto(fn) {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', fn, { once: true });
+  } else {
+    fn();
+  }
+}
+
+executarQuandoDOMPronto(iniciarAplicacao);
+window.addEventListener('pageshow', function() {
+  popularSelectOperadoras();
 });
