@@ -40,3 +40,4 @@ coverage/
 
 # Integrações locais / automação
 .codex/
+*.app
